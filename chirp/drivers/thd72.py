@@ -261,7 +261,7 @@ class THD72Radio(chirp_common.CloneModeRadio):
         rf.valid_tuning_steps = list(TUNE_STEPS)
         rf.valid_tones = list(kenwood_live.KENWOOD_TONES)
         rf.valid_skips = ["", "S"]
-        rf.valid_characters = chirp_common.CHARSET_ALPHANUMERIC
+        rf.valid_characters = chirp_common.CHARSET_1252
         rf.valid_name_length = 8
         return rf
 
