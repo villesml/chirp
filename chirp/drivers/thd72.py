@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import math
 from chirp import chirp_common, errors, directory
 from chirp import bitwise, memmap
 from chirp.drivers import kenwood_live
@@ -70,6 +71,17 @@ struct {
   u8   passwd[6];
 } frontmatter;
 
+#seekto 0x01B0;
+struct {
+    u8 a_band_mask_144MHz;
+    u8 a_band_mask_430MHz;
+    u8 b_band_mask_118MHz;
+    u8 b_band_mask_144MHz;
+    u8 b_band_mask_300MHz;
+    u8 b_band_mask_430MHz;        
+} band_mask;
+
+
 #seekto 0x02c0;
 struct {
   ul32 start_freq;
@@ -85,12 +97,15 @@ struct {
   u8 contrast;
   u8 battery_saver;
   u8 APO;
-  u8 unknown2;
+  u8 battery_type;
   u8 key_beep;
   u8 unknown3[8];
   u8 unknown4;
   u8 balance;
-  u8 unknown5[23];
+  u8 unknown5[18];
+  u8 timezone;
+  u8 unknown6[3];
+  u8 password_enable;
   u8 lamp_control;
 } settings;
 
@@ -235,13 +250,17 @@ class THD72Radio(chirp_common.CloneModeRadio):
 
     _LCD_CONTRAST = ["Level %d" % x for x in range(1, 16)]
     _LAMP_CONTROL = ["Manual", "Auto"]
+    _ONOFF_CONTROL = ["OFF", "ON"]
     _LAMP_TIMER = ["Seconds %d" % x for x in range(2, 11)]
     _BATTERY_SAVER = ["OFF", "0.03 Seconds", "0.2 Seconds", "0.4 Seconds",
                       "0.6 Seconds", "0.8 Seconds", "1 Seconds", "2 Seconds",
                       "3 Seconds", "4 Seconds", "5 Seconds"]
+    _BATTERY_TYPE = ["Lithium", "Alkaline"]
     _APO = ["OFF", "15 Minutes", "30 Minutes", "60 Minutes"]
     _AUDIO_BALANCE = ["Center", "A +50%", "A +100%", "B +50%", "B +100%"]
     _KEY_BEEP = ["OFF", "Radio & GPS", "Radio Only", "GPS Only"]
+    _TIMEZONES = [f"UTC{int(h):+02} h {int(60*(h%1))} min" for h in [-14 + (i/4) for i in range(0x71)]]
+
 
     def get_features(self):
         rf = chirp_common.RadioFeatures()
@@ -263,6 +282,7 @@ class THD72Radio(chirp_common.CloneModeRadio):
         rf.valid_skips = ["", "S"]
         rf.valid_characters = chirp_common.CHARSET_1252
         rf.valid_name_length = 8
+        rf.valid_special_chans = THD72_SPECIAL.keys()
         return rf
 
     def process_mmap(self):
@@ -321,6 +341,7 @@ class THD72Radio(chirp_common.CloneModeRadio):
             repr(self._memobj.flag[number])
 
     def get_memory(self, number):
+        print(f"get memory {number=}")
         if isinstance(number, str):
             try:
                 number = THD72_SPECIAL[number]
@@ -330,7 +351,7 @@ class THD72Radio(chirp_common.CloneModeRadio):
 
         if number < 0 or number > (max(THD72_SPECIAL.values()) + 1):
             raise errors.InvalidMemoryLocation(
-                "Number must be between 0 and 999")
+                f"Number must be between 0 and {max(THD72_SPECIAL.values())}")
 
         _mem = self._memobj.memory[number]
         flag = self._memobj.flag[number]
@@ -373,7 +394,7 @@ class THD72Radio(chirp_common.CloneModeRadio):
         LOG.debug("set_memory(%d)" % mem.number)
         if mem.number < 0 or mem.number > (max(THD72_SPECIAL.values()) + 1):
             raise errors.InvalidMemoryLocation(
-                "Number must be between 0 and 999")
+                f"Number must be between 0 and {max(THD72_SPECIAL.values())}")
 
         # weather channels can only change name, nothing else
         if mem.number >= 1020 and mem.number < 1030:
@@ -561,7 +582,9 @@ class THD72Radio(chirp_common.CloneModeRadio):
     def _get_settings(self):
         top = RadioSettings(self._get_display_settings(),
                             self._get_audio_settings(),
-                            self._get_battery_settings())
+                            self._get_battery_settings(),
+                            self._get_band_settings(),
+                            self._get_group_names())
         return top
 
     def set_settings(self, settings):
@@ -618,10 +641,20 @@ class THD72Radio(chirp_common.CloneModeRadio):
         message = setting.value.get_value()
         setattr(obj, "power_on_msg", cls._add_ff_pad(message, 8))
 
+    def apply_group_name(self, setting, obj, index):
+        name = setting.value.get_value()
+        self._memobj.group_name[index].name = name[:8]
+
     def apply_lcd_contrast(cls, setting, obj):
         rawval = setting.value.get_value()
         val = cls._LCD_CONTRAST.index(rawval) + 1
         obj.contrast = val
+
+    def apply_timezone(cls, setting, obj):
+        rawval = setting.value.get_value()
+        val = cls._TIMEZONES.index(rawval)
+        obj.timezone = val
+
 
     def apply_lamp_control(cls, setting, obj):
         rawval = setting.value.get_value()
@@ -633,12 +666,18 @@ class THD72Radio(chirp_common.CloneModeRadio):
         val = cls._LAMP_TIMER.index(rawval) + 2
         obj.lamp_timer = val
 
+    
+    def apply_passwd(self, setting):
+        message = setting.value.get_value()
+        self._memobj.frontmatter.passwd = self._add_ff_pad(message, 6)
+        
+
     def _get_display_settings(self):
         menu = RadioSettingGroup("display", "Display")
         display_settings = self._memobj.settings
 
         val = RadioSettingValueString(
-            0, 8, str(display_settings.power_on_msg).rstrip("\xFF"))
+            0, 8, str(display_settings.power_on_msg).rstrip("\xFF"), charset=chirp_common.CHARSET_1252)
         rs = RadioSetting("display.power_on_msg", "Power on message", val)
         rs.set_apply_callback(self.apply_power_on_msg, display_settings)
         menu.append(rs)
@@ -667,12 +706,69 @@ class THD72Radio(chirp_common.CloneModeRadio):
         rs.set_apply_callback(self.apply_lamp_timer, display_settings)
         menu.append(rs)
 
+        passwd = ''.join([chr(c) for c in self._memobj.frontmatter.passwd if c != 0xff])
+        print('pass', f"'{passwd}'")
+
+        val = RadioSettingValueString(0, 6, passwd, charset='0123456789', autopad=False)
+        rs = RadioSetting("frontmatter.passwd", "Radio password", val)
+        rs.set_apply_callback(self.apply_passwd)
+        menu.append(rs)
+
+        val = RadioSettingValueList(
+            self._ONOFF_CONTROL ,
+            self._ONOFF_CONTROL[display_settings.password_enable])
+        rs = RadioSetting("display.password_enable", "Password enabled",
+                          val)
+        rs.set_apply_callback(self.apply_timezone, display_settings)
+        menu.append(rs)
+
+        val = RadioSettingValueList(
+            self._TIMEZONES ,
+            self._TIMEZONES[display_settings.timezone])
+        rs = RadioSetting("display.timezone", "Timezone",
+                          val)
+        rs.set_apply_callback(self.apply_timezone, display_settings)
+        menu.append(rs)
+
+        return menu
+
+
+    def apply_band_setting(self, setting, name):
+        band_settings = self._memobj.band_mask
+        val = math.trunc(setting.value.get_value())
+        setattr(band_settings, name, val)
+
+    def _get_band_settings(self):
+        menu = RadioSettingGroup("band", "Band")
+        band_settings = self._memobj.band_mask
+
+        items = {
+            'a_band_mask_144MHz' : "A Band 144MHz",
+            'a_band_mask_430MHz' : "A Band 430MHz",
+            'b_band_mask_118MHz' : "B Band 118MHz",
+            'b_band_mask_144MHz' : "B Band 144MHz",
+            'b_band_mask_300MHz' : "B Band 300MHz",
+            'b_band_mask_430MHz' : "B Band 430MHz",    
+        }
+
+        for key, value in items.items():
+            val = RadioSettingValueList(['Mask', 'Use'], current_index=getattr(band_settings, key))
+            rs = RadioSetting(key, value, val)
+            rs.set_apply_callback(self.apply_band_setting, key)
+            menu.append(rs)
+
+
         return menu
 
     def apply_battery_saver(cls, setting, obj):
         rawval = setting.value.get_value()
         val = cls._BATTERY_SAVER.index(rawval)
         obj.battery_saver = val
+
+    def apply_battery_type(cls, setting, obj):
+        rawval = setting.value.get_value()
+        val = cls._BATTERY_TYPE.index(rawval)
+        obj.battery_type = val
 
     def apply_APO(cls, setting, obj):
         rawval = setting.value.get_value()
@@ -692,6 +788,15 @@ class THD72Radio(chirp_common.CloneModeRadio):
         menu.append(rs)
 
         val = RadioSettingValueList(
+            self._BATTERY_TYPE,
+            self._BATTERY_TYPE[battery_settings.battery_type])
+        rs = RadioSetting("battery.battery_type", "Battery type",
+                          val)
+        rs.set_apply_callback(self.apply_battery_type, battery_settings)
+        menu.append(rs)
+
+
+        val = RadioSettingValueList(
             self._APO,
             self._APO[battery_settings.APO])
         rs = RadioSetting("battery.APO", "Auto Power Off",
@@ -699,6 +804,20 @@ class THD72Radio(chirp_common.CloneModeRadio):
         rs.set_apply_callback(self.apply_APO, battery_settings)
         menu.append(rs)
 
+        return menu
+    
+    def _get_group_names(self):
+        menu = RadioSettingGroup("groups", "Groups")
+        group_names = self._memobj.group_name
+
+        for i in range(10):
+            val = RadioSettingValueString(
+                0, 8, str(group_names[i].name).rstrip("\xFF"),
+                charset=chirp_common.CHARSET_1252)
+            rs = RadioSetting(f"groups.name{i}", f"Group-{i}: Channels {i*100}-{(i+1)*100 -1}", val)
+            rs.set_apply_callback(self.apply_group_name, group_names, i)
+            menu.append(rs)
+            
         return menu
 
     def apply_balance(cls, setting, obj):
