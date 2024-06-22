@@ -114,7 +114,6 @@ struct {
   u8 zeros128[128];
 } oem_info;
 
-#seekto 0x0100;
 struct flag chan_flags[750]; // Channel flags
 struct flag limit_flags[10]; // Limit channel flags
 //u8 effs8[8];
@@ -131,7 +130,7 @@ struct memory {
        txdcsextra:1,        // use with txcode for index of tx DCS to use
        rxdcsinv:1,          // inverse DCS rx polarity
        txdcsinv:1,          // inverse DCS tx polarity
-       channel_width:2,     // [25kHz, 20kHz, 12.5kHz]
+       channel_width:2,     // [25 kHz, 20 kHz, 12.5 kHz]
        rev:1,               // reverse the tx and rx frequencies & tones
        txoff:1;             // prevent tx
     u8 talkaround:1,        // Use the rx freq & tone when transmitting
@@ -154,7 +153,7 @@ struct memory {
        pttid:2,             // [Off, Begin, End, Begin&End]
        unknown6:2,
        bclo:2;              // [Off, Repeater, Busy]
-    u8 unknown7:6
+    u8 unknown7:6,
        band:2;              // [2m, 1-1/4m, 350+ MHz, 70cm]
     u8 unknown8:5,
        sql_mode:3;          // [Carrier, CTCSS/DCS Tones, Opt Sig Only,
@@ -195,7 +194,6 @@ struct DTMF12p3 dtmf_encodings[16];
 #seekto 0x0540;                 // Hyper channels (12 x 2)
 struct memory hyper_channels[24];
 
-#seekto 0x0840;                 // Settings
 struct {
   u8 unknown1:6,
      display:2;             // Display Mode: [freq, chan, name]
@@ -238,7 +236,7 @@ struct {
      clk_shift:1,           // CLK Shift: 0=off 1=on
      ext_spk_on:1,          // Enable the external speaker
      alt_key_mode:1,        // Use Alt Keypad Mode: 0=off 1=on
-     beep_on:1              // Enable beep
+     beep_on:1,             // Enable beep
      no_tone_elim_tail:1,   // Elim squelch tail when no CTCSS/DCS signaling
      sql_key_mode:1;        // SQL Key Function: [Momentary, Toggle]
   u8 unknown16:5,
@@ -460,13 +458,13 @@ struct {
   u8 unknown:6,
      mode:2;                // [Alarm, Transpond+Background,
                             //  Transpond+Alarm, Both]
-  u8 unknown:6,
+  u8 unknown2:6,
      eni_type:2;            // [None, DTMF, 5Tone]
   u8 id;                    // When DTMF: [M1-M16], When 5Tone: 0-99
   u8 alarm_time;            // [1-255] seconds
   u8 tx_time;               // [0-255] seconds
   u8 rx_time;               // [0-255] seconds
-  u8 unknown:7,
+  u8 unknown3:7,
      chan_select:1;         // [Assigned, Selected]
   ul16 channel;             // [0-749]
   u8 cycle;                 // [Continuous, 1-255]
@@ -798,7 +796,6 @@ class AnyTone5888UVIIIRadio(chirp_common.CloneModeRadio,
     VENDOR = "AnyTone"
     MODEL = "5888UVIII"
     BAUD_RATE = 9600
-    NEEDS_COMPAT_SERIAL = False
     _file_ident = b"588UVP"
 
     _ranges = [
@@ -938,7 +935,7 @@ class AnyTone5888UVIIIRadio(chirp_common.CloneModeRadio,
 
         if not is_hyper_chan and _flg.unused:
             mem.empty = True
-            _mem.set_raw("\x00" * 32)
+            _mem.fill_raw(b"\x00")
             _mem.name = SEVEN_SPACES
             _flg.scan = 0
 

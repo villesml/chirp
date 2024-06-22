@@ -33,6 +33,16 @@ from chirp import util
 LOG = logging.getLogger(__name__)
 
 MEM_SETTINGS_FORMAT = """
+#seekto 0x047e;
+struct {
+  u8 unknown1;
+  u8 flag;
+  u16 unknown2;
+  struct {
+    u8 padded_yaesu[16];
+  } message;
+} opening_message;
+
 #seekto 0x049a;
 struct {
   u8 vfo_a;
@@ -49,7 +59,7 @@ struct {
   u8 lcd_dimmer;        // 14 DIMMER
   u8 dtmf_delay;        // 18 DT DLY
   u8 unknown0[3];
-  u8 unknown1:4
+  u8 unknown1:4,
      lcd_contrast:4;
   u8 lamp;              // 28 LAMP
   u8 lock;              // 30 LOCK
@@ -76,7 +86,7 @@ struct {
   u8 busy_led:1,
      unknown9:2,
      bclo:1,            // 03 BCLO
-     beep_edge:1        // 06 BEP.EDG
+     beep_edge:1,       // 06 BEP.EDG
      unknown9_1:3;
   u8 unknown10:5,
      password:1,
@@ -91,6 +101,11 @@ struct {
      unknown12_1:2,
      dw_rt:1;           // 23 DW RVT;
 } scan_settings;
+
+#seekto 0x54a;
+struct {
+    u16 in_use;
+} bank_used[24];
 
 #seekto 0x064a;
 struct {
@@ -136,20 +151,16 @@ struct {
   u8 checksum;
 } vfo_info[6];
 
-#seekto 0x047e;
-struct {
-  u8 unknown1;
-  u8 flag;
-  u16 unknown2;
-  struct {
-    u8 padded_yaesu[16];
-  } message;
-} opening_message;
-
 #seekto 0x%(dtmadd)04X; // FT-1D:0e4a, FT2D:094a
 struct {
   u8 memory[16];
 } dtmf[10];
+
+#seekto 0x0EFE;
+struct {
+  u8 unknown[2];
+  u8 name[16];
+} bank_info[24];
 
 #seekto 0x154a;
 // These "channels" seem to actually be a structure:
@@ -164,17 +175,6 @@ struct {
 struct {
     u16 channel[100];
 } bank_members[24];
-
-#seekto 0x54a;
-struct {
-    u16 in_use;
-} bank_used[24];
-
-#seekto 0x0EFE;
-struct {
-  u8 unknown[2];
-  u8 name[16];
-} bank_info[24];
 """
 
 MEM_FORMAT = """
@@ -248,7 +248,7 @@ struct {
   u8 unknown7:1,
      aprs_units_wind_mph:1,
      aprs_units_rain_inch:1,
-     aprs_units_temperature_f:1
+     aprs_units_temperature_f:1,
      aprs_units_altitude_ft:1,
      unknown8:1,
      aprs_units_distance_m:1,
@@ -428,8 +428,15 @@ struct {
     u8 unknown4:6,
         gm_ring:2;              // 24 GM RNG
     u8 temp_cf;               // Placeholder as not found
-    u8 unknown5;
     } first_settings;
+
+#seekto 0x04c0;
+struct {
+    u8 unknown1:5,
+        beep_level:3;           // 05 BEP.LVL
+    u8 unknown2:6,
+        beep_select:2;          // 04 BEEP
+    } beep_settings;
 
 #seekto 0x04ed;
 struct {
@@ -443,13 +450,11 @@ struct {
        unknown8:1;
      } test_bit_field;
 
-#seekto 0x04c0;
+#seekto 0x0ced0;
 struct {
-    u8 unknown1:5,
-        beep_level:3;           // 05 BEP.LVL
-    u8 unknown2:6,
-        beep_select:2;          // 04 BEEP
-    } beep_settings;
+    char callsign[10];              // 63 MYCALL
+    u16 charset;                    // character set ID
+    } my_call;
 
 #seekto 0xCF30;
 struct {
@@ -485,12 +490,6 @@ struct {
 struct {
     char message[32];
     } GM[10];
-
-#seekto 0x0ced0;
-struct {
-    char callsign[10];              // 63 MYCALL
-    u16 charset;                    // character set ID
-    } my_call;
 
 #seekto 0x1ddca;
 struct {
@@ -828,9 +827,6 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
     _VFO_SCAN_MODE = ("BAND", "ALL")
     _MEMORY_SCAN_MODE = ("BAND", "ALL")
 
-    _SG_RE = re.compile(r"(?P<sign>[-+NESW]?)(?P<d>[\d]+)[\s\.,]*"
-                        "(?P<m>[\d]*)[\s\']*(?P<s>[\d]*)")
-
     _RX_BAUD = ("off", "1200 baud", "9600 baud")
     _TX_DELAY = ("100ms", "150ms", "200ms", "250ms", "300ms",
                  "400ms", "500ms", "750ms", "1000ms")
@@ -878,7 +874,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
     _SQUELCH = ["%d" % x for x in range(0, 16)]
     _VOLUME = ["%d" % x for x in range(0, 33)]
     _DG_ID = ["%d" % x for x in range(0, 100)]
-    _GM_RING = ("OFF", "IN RING", "AlWAYS")
+    _GM_RING = ("OFF", "IN RING", "ALWAYS")
     _GM_INTERVAL = ("LONG", "NORMAL", "OFF")
 
     _MYCALL_CHR_SET = list(string.ascii_uppercase) + \
@@ -911,7 +907,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
 
     def process_mmap(self):
         mem_format = MEM_SETTINGS_FORMAT + MEM_FORMAT + MEM_APRS_FORMAT + \
-                MEM_BACKTRACK_FORMAT + MEM_GM_FORMAT + MEM_CHECKSUM_FORMAT
+                MEM_GM_FORMAT + MEM_BACKTRACK_FORMAT + MEM_CHECKSUM_FORMAT
         self._memobj = bitwise.parse(mem_format % self._mem_params, self._mmap)
 
     def get_features(self):
@@ -989,7 +985,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
                     num += len(x[1])
                     # num -= len(x[1])
             if array is None:
-                raise IndexError("Unknown special %s", memref)
+                raise IndexError("Unknown special %s" % memref)
             num += ndx
             # num -= ndx
         elif memref > self.MAX_MEM_SLOT:         # numbered special
@@ -1003,7 +999,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
                     break
                 ndx -= len(x[1])
             if array is None:
-                raise IndexError("Unknown memref number %s", memref)
+                raise IndexError("Unknown memref number %s" % memref)
         else:
             array = "memory"
             ndx = memref - 1
@@ -1966,9 +1962,9 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
         val = setting.value.get_value()
         setattr(obj, "name", val)
 
-    def apply_WiresX_roomid(cls, setting, obj):
+    def apply_WiresX_roomid(self, setting, obj):
         val = setting.value.get_value()
-        obj.ID = str(val)
+        obj.ID = self.zero_pad(val, 5)
 
     def apply_WiresX_roomname(cls, setting, obj):
         val = setting.value.get_value()
@@ -2082,12 +2078,12 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
 
         return False
 
-    def backtrack_zero_pad(self, number, l):
-        number = str(number).strip()
-        while len(number) < l:
-            number = '0' + number
-
-        return str(number)
+    @staticmethod
+    def zero_pad(number, length):
+        """
+        Applies a leading zero pad of length `length` to `number`
+        """
+        return str(number).rjust(length, "0")
 
     def _get_backtrack_settings(self):
 
@@ -2173,7 +2169,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
 
             if bt.status == 1 and self.backtrack_ll_validate(bt.lat, 0, 90):
                 val = RadioSettingValueString(
-                        0, 3, self.backtrack_zero_pad(bt.lat, 3))
+                        0, 3, self.zero_pad(bt.lat, 3))
             else:
                 val = RadioSettingValueString(0, 3, '   ')
             rs = RadioSetting("%s.lat" % bt_idx, prefix + "Latitude", val)
@@ -2183,7 +2179,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
             if bt.status == 1 and \
                     self.backtrack_ll_validate(bt.lat_min, 0, 59):
                 val = RadioSettingValueString(
-                    0, 2, self.backtrack_zero_pad(bt.lat_min, 2))
+                    0, 2, self.zero_pad(bt.lat_min, 2))
             else:
                 val = RadioSettingValueString(0, 2, '  ')
             rs = RadioSetting(
@@ -2195,7 +2191,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
             if bt.status == 1 and \
                     self.backtrack_ll_validate(bt.lat_dec_sec, 0, 9999):
                 val = RadioSettingValueString(
-                    0, 4, self.backtrack_zero_pad(bt.lat_dec_sec, 4))
+                    0, 4, self.zero_pad(bt.lat_dec_sec, 4))
             else:
                 val = RadioSettingValueString(0, 4, '    ')
             rs = RadioSetting(
@@ -2218,7 +2214,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
 
             if bt.status == 1 and self.backtrack_ll_validate(bt.lon, 0, 180):
                 val = RadioSettingValueString(
-                    0, 3, self.backtrack_zero_pad(bt.lon, 3))
+                    0, 3, self.zero_pad(bt.lon, 3))
             else:
                 val = RadioSettingValueString(0, 3, '   ')
             rs = RadioSetting("%s.lon" % bt_idx, prefix + "Longitude", val)
@@ -2228,7 +2224,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
             if bt.status == 1 and \
                     self.backtrack_ll_validate(bt.lon_min, 0, 59):
                 val = RadioSettingValueString(
-                    0, 2, self.backtrack_zero_pad(bt.lon_min, 2))
+                    0, 2, self.zero_pad(bt.lon_min, 2))
             else:
                 val = RadioSettingValueString(0, 2, '  ')
             rs = RadioSetting(
@@ -2240,7 +2236,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
             if bt.status == 1 and \
                     self.backtrack_ll_validate(bt.lon_dec_sec, 0, 9999):
                 val = RadioSettingValueString(
-                    0, 4, self.backtrack_zero_pad(bt.lon_dec_sec, 4))
+                    0, 4, self.zero_pad(bt.lon_dec_sec, 4))
             else:
                 val = RadioSettingValueString(0, 4, '    ')
             rs = RadioSetting(
@@ -2358,7 +2354,7 @@ class FT1Radio(yaesu_clone.YaesuCloneModeRadio):
                 ssid = int(ssid) % 16
             except ValueError:
                 ssid = default_ssid
-        setattr(obj, "callsign", cls._add_ff_pad(callsign, 6))
+        setattr(obj, "callsign", cls._add_ff_pad(callsign.encode(), 6))
         if ssid is not None:
             setattr(obj, "ssid", ssid)
 

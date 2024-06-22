@@ -37,7 +37,6 @@ from chirp.settings import (
 LOG = logging.getLogger(__name__)
 
 MEM_FORMAT = """
-#seekto 0x0000;
 struct {
   lbcd rxfreq[4];     // 0-3
   lbcd txfreq[4];     // 4-7
@@ -59,7 +58,7 @@ struct {
   lbcd code[3];       // 0-2 Code
   u8 unknown6;        // 3
   char name[12];      // 4-F 12-character Alpha Tag
-} memory[256];
+} memory[%d];
 
 #seekto 0x9000;
 struct {
@@ -73,7 +72,7 @@ struct {
      abr:4;           //      Auto BackLight
   u8 unused_9004:7,   // 9004
      tdr:1;           //      TDR
-  u8 unused:5,        // 9005
+  u8 unused_9005:5,   // 9005
      tot:3;           //      Time-out Timer
   u8 unused_9006:7,   // 9006
      beep:1;          //      Beep
@@ -85,12 +84,13 @@ struct {
      dtmfst:2;        //      DTMF ST
   u8 unused_900a:6,   // 900A
      screv:2;         //      Scan Mode
-  u8 unknown_900b;    // 900B
+  u8 unused_900B:4,   // 900B
+     pttid:4;         //      PTT-ID
   u8 unused_900c:5,   // 900C
      pttlt:3;         //      PTT Delay
   u8 unused_900d:6,   // 900D
      mdfa:2;          //      Channel_A Display
-  u8 unused_9003:6,   // 900E
+  u8 unused_900e:6,   // 900E
      mdfb:2;          //      Channel_B Display
   u8 unknown_900f;    // 900F
   u8 unused_9010:4,   // 9010
@@ -131,7 +131,7 @@ struct {
   u8 unused_9022:7,   // 9022
      tailcode:1;      //      Tail Code (RT-470L)
   u8 unknown_9023;    // 9023
-  u8 unknown_9024;    // 9024
+  u8 unlock_sw_ch;    // 9024 UNLOCK SW CH (A36plus 8w)
   u8 unknown_9025;    // 9025
   u8 unknown_9026;    // 9026
   u8 unknown_9027;    // 9027
@@ -148,23 +148,34 @@ struct {
                       //      TAIL PHASE (A36plus)
   u8 skey3_lp;        // 9030 Skey3 Long (RT-470L)
                       //      RX END TAIL (A36plus)
+  u8 unknown_9031;    // 9031
+  u8 unknown_9032;    // 9032
+  u8 unknown_9033;    // 9033
+  u8 unknown_9034;    // 9034
+  u8 unknown_9035;    // 9035
+  u8 unknown_9036;    // 9036
+  u8 unknown_9037;    // 9037
+  u8 unknown_9038;    // 9038
+  u8 unknown_9039;    // 9039
+  u8 unknown_903a;    // 903a
+  u8 single_mode;     // 903b SINGLE MODE (A36plus 8w)
+  u8 dis_s_table;     // 903b DIS S TABLE (A36plus 8w)
 } settings;
+
+#seekto 0xA006;
+struct {
+  u8 unknown_A006;    // A006
+  u8 unused_a007:5,   // A007
+     dtmfon:3;        //      DTMF Speed (on time)
+  u8 unused_a008:5,   // A008
+     dtmfoff:3;       //      DTMF Speed (off time)
+} dtmf;
 
 #seekto 0xA020;
 struct {
   u8 code[5];         //      5-character DTMF Encoder Groups
   u8 unused[11];
 } pttid[15];
-
-#seekto 0xA006;
-struct {
-  u8 unused_a006:4,   // A006
-     pttid:4;         //      PTT-ID
-  u8 unused_a007:5,   // A007
-     dtmfon:3;        //      DTMF Speed (on time)
-  u8 unused_a008:5,   // A008
-     dtmfoff:3;       //      DTMF Speed (off time)
-} dtmf;
 
 #seekto 0xB000;
 struct {
@@ -173,9 +184,19 @@ struct {
 
 #seekto 0xB0C0;
 struct {
-  char name[6];       //      6-character ANI Code Group Names
-  u8 unused[10];
-} aninames[30];
+  char name[10];      //      10-character ANI Code Group Names
+  u8 unused[6];
+} aninames[%d];
+
+"""
+
+MEM_FORMAT_A36PLUS = """
+#seekto 0xB200;
+struct {
+  char name[10];      //      10-character Custom CH Names (Talkpod A36plus)
+  u8 unused[6];
+} customnames[30];
+
 """
 
 
@@ -280,6 +301,14 @@ def _enter_programming_mode(radio):
     if ident not in radio._fingerprint:
         LOG.debug(util.hexprint(ident))
         raise errors.RadioError("Radio returned unknown identification string")
+
+    if radio.MODEL == "RT-470X":
+        if ident in radio._fingerprint_pcb1:
+            LOG.info("Radtel RT-470X - original pcb")
+            radio.RT470X_ORIG = True
+        elif ident in radio._fingerprint_pcb2:
+            LOG.info("Radtel RT-470X - pcb2")
+            radio.RT470X_ORIG = False
 
 
 def _exit_programming_mode(radio):
@@ -393,7 +422,6 @@ class JC8810base(chirp_common.CloneModeRadio):
     VENDOR = "MML"
     MODEL = "JC-8810base"
     BAUD_RATE = 57600
-    NEEDS_COMPAT_SERIAL = False
     BLOCK_SIZE = 0x40
     BLOCK_SIZE_UP = 0x40
 
@@ -420,6 +448,11 @@ class JC8810base(chirp_common.CloneModeRadio):
                (0xB000, 0xB300)
               ]
     _memsize = 0xB300
+    _upper = 256
+    _aninames = 30
+    _mem_params = (_upper,  # number of channels
+                   _aninames,  # number of aninames
+                   )
     _valid_chars = chirp_common.CHARSET_ALPHANUMERIC + \
         "`~!@#$%^&*()-=_+[]\\{}|;':\",./<>?"
 
@@ -441,15 +474,15 @@ class JC8810base(chirp_common.CloneModeRadio):
                                 "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
         rf.valid_power_levels = self.POWER_LEVELS
         rf.valid_duplexes = ["", "-", "+", "split", "off"]
-        rf.valid_modes = ["FM", "NFM"]  # 25 kHz, 12.5 KHz.
+        rf.valid_modes = ["FM", "NFM"]  # 25 kHz, 12.5 kHz.
         rf.valid_dtcs_codes = DTCS
-        rf.memory_bounds = (1, 256)
-        rf.valid_tuning_steps = [2.5, 5., 6.25, 10., 12.5, 20., 25., 50.]
+        rf.memory_bounds = (1, self._upper)
+        rf.valid_tuning_steps = [2.5, 5., 6.25, 8.33, 10., 12.5, 20., 25., 50.]
         rf.valid_bands = self.VALID_BANDS
         return rf
 
     def process_mmap(self):
-        self._memobj = bitwise.parse(MEM_FORMAT, self._mmap)
+        self._memobj = bitwise.parse(MEM_FORMAT % self._mem_params, self._mmap)
 
     def sync_in(self):
         """Download from radio"""
@@ -478,12 +511,6 @@ class JC8810base(chirp_common.CloneModeRadio):
             raise errors.RadioError('Unexpected error communicating '
                                     'with the radio')
 
-    def _is_txinh(self, _mem):
-        raw_tx = ""
-        for i in range(0, 4):
-            raw_tx += _mem.txfreq[i].get_raw()
-        return raw_tx == "\xFF\xFF\xFF\xFF"
-
     def get_memory(self, number):
         """Get the mem representation from the radio image"""
         _mem = self._memobj.memory[number - 1]
@@ -494,14 +521,14 @@ class JC8810base(chirp_common.CloneModeRadio):
         # Memory number
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xff":
+        if _mem.get_raw()[:1] == b"\xFF":
             mem.empty = True
             return mem
 
         # Freq and offset
         mem.freq = int(_mem.rxfreq) * 10
         # tx freq can be blank
-        if _mem.get_raw()[4] == "\xFF":
+        if _mem.txfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             # TX freq not set
             mem.offset = 0
             mem.duplex = "off"
@@ -578,7 +605,7 @@ class JC8810base(chirp_common.CloneModeRadio):
             mem.skip = "S"
 
         _levels = self.POWER_LEVELS
-        if self.MODEL in ["A36plus", "UV-A37"]:
+        if self.MODEL in ["A36plus", "A36plus_8w", "UV-A37", "AR-730"]:
             if _mem.txpower == TXPOWER_HIGH:
                 mem.power = _levels[0]
             elif _mem.txpower == TXPOWER_LOW:
@@ -630,8 +657,7 @@ class JC8810base(chirp_common.CloneModeRadio):
         _mem.rxfreq = mem.freq / 10
 
         if mem.duplex == "off":
-            for i in range(0, 4):
-                _mem.txfreq[i].set_raw("\xFF")
+            _mem.txfreq.fill_raw(b"\xFF")
         elif mem.duplex == "split":
             _mem.txfreq = mem.offset / 10
         elif mem.duplex == "+":
@@ -686,7 +712,7 @@ class JC8810base(chirp_common.CloneModeRadio):
         _mem.narrow = mem.mode == "NFM"
 
         _levels = self.POWER_LEVELS
-        if self.MODEL == "UV-A37":
+        if self.MODEL in ["A36plus", "A36plus_8w", "UV-A37", "AR-730"]:
             if mem.power is None:
                 _mem.txpower = TXPOWER_HIGH
             elif mem.power == _levels[0]:
@@ -747,7 +773,7 @@ class JC8810base(chirp_common.CloneModeRadio):
         rset = RadioSetting("voice", "Voice Prompts", rs)
         basic.append(rset)
 
-        if self.MODEL not in ["A36plus", "UV-A37"]:
+        if self.MODEL not in ["A36plus", "A36plus_8w", "UV-A37", "AR-730"]:
             # Menu 17: LANGUAGE
             rs = RadioSettingValueList(LANGUAGE_LIST,
                                        LANGUAGE_LIST[_settings.language])
@@ -814,14 +840,14 @@ class JC8810base(chirp_common.CloneModeRadio):
             val = SKEY2S_VALUES[index]
             obj.set_value(val)
 
-        if self.MODEL in ["RT-470"]:
-            unwanted = [0, 7, 9, 10, 11, 12]
-        elif self.MODEL in ["HI-8811", "RT-470L"]:
+        if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-470"]:
             unwanted = [9, 10, 11, 12]
-        elif self.MODEL in ["UV-A37"]:
+        elif self.MODEL in ["UV-A37", "AR-730"]:
             unwanted = [0, 5, 7, 9, 10, 11, 12]
-        elif self.MODEL in ["A36plus"]:
+        elif self.MODEL in ["A36plus", "A36plus_8w"]:
             unwanted = [0, 5, 7, 9, 10, 11]
+        elif self.MODEL in ["RT-630", "RT-495"]:
+            unwanted = [5, 9, 10, 11, 12]
         else:
             unwanted = []
         SKEY2S_CHOICES = ALL_SKEY_CHOICES.copy()
@@ -847,14 +873,14 @@ class JC8810base(chirp_common.CloneModeRadio):
             val = SKEY2L_VALUES[index]
             obj.set_value(val)
 
-        if self.MODEL in ["RT-470"]:
-            unwanted = [0, 7, 8, 9, 10, 11, 12]
-        elif self.MODEL in ["HI-8811", "RT-470L"]:
+        if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-470"]:
             unwanted = [8, 9, 10, 11, 12]
-        elif self.MODEL in ["UV-A37"]:
+        elif self.MODEL in ["UV-A37", "AR-730"]:
             unwanted = [0, 5, 7, 8, 10, 11, 12]
-        elif self.MODEL in ["A36plus"]:
+        elif self.MODEL in ["A36plus", "A36plus_8w"]:
             unwanted = [0, 5, 7, 8, 11, 12]
+        elif self.MODEL in ["RT-630", "RT-495"]:
+            unwanted = [5, 9, 10, 11, 12]
         else:
             unwanted = []
         SKEY2L_CHOICES = ALL_SKEY_CHOICES.copy()
@@ -877,17 +903,17 @@ class JC8810base(chirp_common.CloneModeRadio):
             LOG.debug("Setting value: " + str(setting.value) + " from list")
             val = str(setting.value)
             index = SKEY3S_CHOICES.index(val)
-            val = SKEY2S_VALUES[index]
+            val = SKEY3S_VALUES[index]
             obj.set_value(val)
 
-        if self.MODEL in ["RT-470"]:
-            unwanted = [0, 7, 8, 9, 10, 11, 12]
-        elif self.MODEL in ["HI-8811", "RT-470L"]:
+        if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-470"]:
             unwanted = [8, 9, 10, 11, 12]
-        elif self.MODEL in ["UV-A37"]:
+        elif self.MODEL in ["UV-A37", "AR-730"]:
             unwanted = [0, 5, 7, 8, 9, 10, 11, 12]
-        elif self.MODEL in ["A36plus"]:
-            unwanted = [0, 5, 7, 8, 9]
+        elif self.MODEL in ["A36plus", "A36plus_8w"]:
+            unwanted = [0, 5, 7, 8, 11]
+        elif self.MODEL in ["RT-630", "RT-495"]:
+            unwanted = [5, 9, 10, 11, 12]
         else:
             unwanted = []
         SKEY3S_CHOICES = ALL_SKEY_CHOICES.copy()
@@ -905,7 +931,8 @@ class JC8810base(chirp_common.CloneModeRadio):
         rset.set_apply_callback(apply_skey3s_listvalue, _settings.skey3_sp)
         basic.append(rset)
 
-        if self.MODEL in ["HI-8811", "RT-470L"]:
+        if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-470", "RT-630",
+                          "RT-495"]:
             # Menu 24: PF3 LONG PRESS (RT-470L)
             def apply_skey3l_listvalue(setting, obj):
                 LOG.debug("Setting value: " + str(setting.value) +
@@ -915,8 +942,10 @@ class JC8810base(chirp_common.CloneModeRadio):
                 val = SKEY2L_VALUES[index]
                 obj.set_value(val)
 
-            if self.MODEL in ["HI-8811", "RT-470L"]:
+            if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-470"]:
                 unwanted = [8, 9, 10, 11, 12]
+            elif self.MODEL in ["RT-630", "RT-495"]:
+                unwanted = [5, 9, 10, 11, 12]
             else:
                 unwanted = []
             SKEY3L_CHOICES = ALL_SKEY_CHOICES.copy()
@@ -944,21 +973,12 @@ class JC8810base(chirp_common.CloneModeRadio):
             val = SKEYTOP_VALUES[index]
             obj.set_value(val)
 
-        if self.MODEL in ["RT-470"]:
-            # ==========
-            # Notice to developers:
-            # The RT-470 v1.22 firmware added 'hidden' support for the
-            # Top Key (Short Press) feature. RT-470 radios with a firmware
-            # version prior to v1.22 will not honor the Top Key (Short
-            # Press) setting in CHIRP.
-            # ==========
-            unwanted = [0, 7, 8, 9, 10, 11, 12]
-        elif self.MODEL in ["HI-8811", "RT-470L"]:
+        if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-470"]:
             unwanted = [8, 9, 10, 11, 12]
-        elif self.MODEL in ["UV-A37"]:
+        elif self.MODEL in ["UV-A37", "AR-730"]:
             unwanted = [0, 5, 7, 8, 9, 10, 11, 12]
-        elif self.MODEL in ["A36plus"]:
-            unwanted = [0, 5, 7, 8, 9]
+        elif self.MODEL in ["A36plus", "A36plus_8w"]:
+            unwanted = [0, 5, 7, 8, 11]
         else:
             unwanted = []
         SKEYTOP_CHOICES = ALL_SKEY_CHOICES.copy()
@@ -987,7 +1007,7 @@ class JC8810base(chirp_common.CloneModeRadio):
         rset = RadioSetting("ponmsg", "Power On Message", rs)
         basic.append(rset)
 
-        if self.MODEL in ["HI-8811", "RT-470L"]:
+        if self.MODEL in ["HI-8811", "RT-470L", "RT-470X", "RT-630", "RT-495"]:
             rs = RadioSettingValueList(TAILCODE_LIST,
                                        TAILCODE_LIST[_settings.tailcode])
             rset = RadioSetting("tailcode", "Tail Code", rs)
@@ -1067,7 +1087,7 @@ class JC8810base(chirp_common.CloneModeRadio):
         rset = RadioSetting("beep", "Beep", rs)
         basic.append(rset)
 
-        if self.MODEL not in ["A36plus", "UV-A37"]:
+        if self.MODEL not in ["A36plus", "A36plus_8w", "UV-A37", "AR-730"]:
             # Menu 48: RX END TAIL
             rs = RadioSettingValueList(TONERXEND_LIST,
                                        TONERXEND_LIST[_settings.rxendtail])
@@ -1106,8 +1126,8 @@ class JC8810base(chirp_common.CloneModeRadio):
         rset = RadioSetting("dtmf.dtmfoff", "DTMF Speed (off)", rs)
         dtmf.append(rset)
 
-        rs = RadioSettingValueList(PTTID_LIST, PTTID_LIST[_dtmf.pttid])
-        rset = RadioSetting("dtmf.pttid", "PTT ID", rs)
+        rs = RadioSettingValueList(PTTID_LIST, PTTID_LIST[_settings.pttid])
+        rset = RadioSetting("pttid", "PTT ID", rs)
         dtmf.append(rset)
 
         ani = RadioSettingGroup("ani", "ANI Code List Settings")
@@ -1122,41 +1142,46 @@ class JC8810base(chirp_common.CloneModeRadio):
                     filtered += " "
             return filtered
 
-        for i in range(0, 30):
+        end = 60 - self._aninames  # end of immutable ANI names
+        for i in range(0, end):
             _codeobj = self._memobj.anicodes[i].code
             _code = "".join([DTMF_CHARS[x] for x in _codeobj if int(x) < 0x1F])
             rs = RadioSettingValueString(0, 3, _code, False)
             rs.set_charset(DTMF_CHARS)
             rset = RadioSetting("anicodes/%i.code" % i,
-                                "ANI Code %i" % (i + 1), rs)
+                                "ANI Code %i (NUM.%i)" % (i + 1, i + 1), rs)
             rset.set_apply_callback(apply_code, self._memobj.anicodes[i], 3)
             ani.append(rset)
 
-            _nameobj = "NUM.%i" % (i + 1)
-            rs = RadioSettingValueString(0, 6, _nameobj)
-            rs.set_mutable(False)
-            rset = RadioSetting("aninames/%i.code" % i,
-                                "ANI Code %i Name" % (i + 1), rs)
-            ani.append(rset)
-
-        for i in range(0, 30):
-            _codeobj = self._memobj.anicodes[i + 30].code
+        for i in range(end, 60):
+            _codeobj = self._memobj.anicodes[i].code
             _code = "".join([DTMF_CHARS[x] for x in _codeobj if int(x) < 0x1F])
             rs = RadioSettingValueString(0, 3, _code, False)
             rs.set_charset(DTMF_CHARS)
-            rset = RadioSetting("anicodes/%i.code" % (i + 30),
-                                "ANI Code %i" % (i + 31), rs)
+            rset = RadioSetting("anicodes/%i.code" % (i),
+                                "ANI Code %i" % (i + 1), rs)
             rset.set_apply_callback(apply_code,
-                                    self._memobj.anicodes[i + 30], 3)
+                                    self._memobj.anicodes[i], 3)
             ani.append(rset)
 
-            _nameobj = self._memobj.aninames[i].name
-            rs = RadioSettingValueString(0, 6, _filter(_nameobj))
-            rset = RadioSetting("aninames/%i.name" % i,
-                                "ANI Code %i Name" % (i + 31), rs)
+            _nameobj = self._memobj.aninames[i - end].name
+            rs = RadioSettingValueString(0, 10, _filter(_nameobj))
+            rset = RadioSetting("aninames/%i.name" % (i - end),
+                                "ANI Code %i Name" % (i + 1), rs)
             ani.append(rset)
 
-        if self.MODEL == "A36plus":
+        if self.MODEL in ["A36plus", "A36plus_8w"]:
+            custom = RadioSettingGroup("custom", "Custom Channel Names")
+            group.append(custom)
+
+            for i in range(0, 30):
+                _nameobj = self._memobj.customnames[i].name
+                rs = RadioSettingValueString(0, 10, _filter(_nameobj))
+                rset = RadioSetting("customnames/%i.name" % i,
+                                    "Custom Name %i" % (i + 1), rs)
+                custom.append(rset)
+
+        if self.MODEL in ["A36plus", "A36plus_8w"]:
             # Menu 21: RX END TAIL
             rs = RadioSettingValueList(TONERXEND_LIST,
                                        TONERXEND_LIST[_settings.skey3_lp])
@@ -1167,6 +1192,22 @@ class JC8810base(chirp_common.CloneModeRadio):
             rs = RadioSettingValueList(TAILPHASE_LIST,
                                        TAILPHASE_LIST[_settings.rxendtail])
             rset = RadioSetting("rxendtail", "Tail Phase", rs)
+            basic.append(rset)
+
+            # Menu 20: SINGLE MODE
+            rs = RadioSettingValueBoolean(_settings.single_mode)
+            rset = RadioSetting("single_mode", "Single Display Mode", rs)
+            basic.append(rset)
+
+            # Menu 48: UNLOCK SW CH
+            rs = RadioSettingValueBoolean(_settings.unlock_sw_ch)
+            rset = RadioSetting("unlock_sw_ch",
+                                "Override KB Lock for Channel Keys", rs)
+            basic.append(rset)
+
+            # Menu 49: DIS S TABLE
+            rs = RadioSettingValueBoolean(_settings.dis_s_table)
+            rset = RadioSetting("dis_s_table", "Display S Meter", rs)
             basic.append(rset)
 
         return group
@@ -1224,14 +1265,34 @@ class RT470Radio(JC8810base):
 
     # ==========
     # Notice to developers:
-    # The RT-470 support in this driver is currently based upon v1.23 firmware.
+    # The RT-470 support in this driver is currently based upon...
+    # - v1.25a firmware (original pcb)
+    # - v2.11a firmware (pcb2)
     # ==========
 
-    VALID_BANDS = [(100000000, 136000000),
+    # original pcb
+    _fingerprint_pcb1 = [b"\x00\x00\x00\x26\x00\x20\xD8\x04",
+                         b"\x00\x00\x00\x42\x00\x20\xF0\x04",
+                         b"\x00\x00\x00\x4A\x00\x20\xF8\x04",
+                         b"\x00\x00\x00\x3A\x00\x20\xE8\x04",  # fw 1.25A
+                         ]
+
+    # pcb 2
+    _fingerprint_pcb2 = [b"\x00\x00\x00\x28\x00\x20\xD4\x04",  # fw v2.00
+                         b"\x00\x00\x00\x2C\x00\x20\xD8\x04",  # fw v2.11A
+                         b"\x00\x00\x00\x36\x00\x20\xDC\x04",  # fw v2.13A
+                         ]
+
+    _fingerprint = _fingerprint_pcb1 + _fingerprint_pcb2
+
+    VALID_BANDS = [(16000000, 100000000),
+                   (100000000, 136000000),
                    (136000000, 200000000),
                    (200000000, 300000000),
                    (300000000, 400000000),
-                   (400000000, 560000000)]
+                   (400000000, 560000000),
+                   (740000000, 1000000000),
+                   ]
 
 
 @directory.register
@@ -1261,6 +1322,39 @@ class RT470LRadio(JC8810base):
 
 
 @directory.register
+class RT470XRadio(RT470LRadio):
+    """Radtel RT-470X"""
+    VENDOR = "Radtel"
+    MODEL = "RT-470X"
+
+    # ==========
+    # Notice to developers:
+    # The RT-470X support in this driver is currently based upon...
+    # - v1.18a firmware (original pcb)
+    # - v2.13a firmware (pcb2)
+    # ==========
+
+    # original pcb
+    _fingerprint_pcb1 = [b"\x00\x00\x00\x20\x00\x20\xCC\x04",
+                         ]
+
+    # pcb 2
+    _fingerprint_pcb2 = [b"\x00\x00\x00\x2C\x00\x20\xD8\x04",  # fw v2.10A
+                         b"\x00\x00\x00\x36\x00\x20\xDC\x04",  # fw v2.13A
+                         ]
+
+    _fingerprint = _fingerprint_pcb1 + _fingerprint_pcb2
+
+    RT470X_ORIG = False
+
+    VALID_BANDS = [(100000000, 136000000),
+                   (136000000, 200000000),
+                   (200000000, 300000000),
+                   (300000000, 400000000),
+                   (400000000, 560000000)]
+
+
+@directory.register
 class HI8811Radio(RT470LRadio):
     """Hiroyasu HI-8811"""
     VENDOR = "Hiroyasu"
@@ -1268,9 +1362,23 @@ class HI8811Radio(RT470LRadio):
 
     # ==========
     # Notice to developers:
-    # The HI-8811 support in this driver is currently based upon v1.17
-    # firmware.
+    # The HI-8811 support in this driver is currently based upon...
+    # - v1.17 firmware (original pcb)
+    # - v2.00 firmware (pcb2)
     # ==========
+
+    # original pcb
+    _fingerprint_pcb1 = [b"\x00\x00\x00\xfe\x00\x20\xAC\x04",
+                         b"\x00\x00\x00\x20\x00\x20\xCC\x04",  # fw v1.17
+                         b"\x00\x00\x00\x20\x00\x20\x07\x00",
+                         ]
+
+    # pcb 2
+    _fingerprint_pcb2 = [b"\x00\x00\x00\x28\x00\x20\xD4\x04",  # fw v2.00
+                         b"\x00\x00\x00\x28\x00\x20\x07\x00",  # fw v2.00
+                         ]
+
+    _fingerprint = _fingerprint_pcb1 + _fingerprint_pcb2
 
 
 @directory.register
@@ -1316,7 +1424,75 @@ class A36plusRadio(JC8810base):
 
     # ==========
     # Notice to developers:
-    # The A36plus support in this driver is currently based upon v1.18
+    # The A36plus support in this driver is currently based upon v1.22
+    # firmware.
+    # ==========
+
+    POWER_LEVELS = [chirp_common.PowerLevel("H", watts=5.00),
+                    chirp_common.PowerLevel("L", watts=1.00)]
+
+    VALID_BANDS = [(108000000, 136000000),
+                   (136000000, 180000000),
+                   (200000000, 260000000),
+                   (350000000, 400000000),
+                   (400000000, 520000000),
+                   ]
+
+    _magic = b"PROGRAMJC37U"
+    _fingerprint = [b"\x00\x00\x00\x42\x00\x20\xF0\x04",
+                    b"\x00\x00\x00\x5A\x00\x20\x08\x05",  # fw 1.18
+                    b"\x00\x00\x00\x9E\x00\x20\x0C\x05",  # fw 1.22
+                    b"\x00\x00\x00\xFA\x00\x20\x40\x05",  # fw 1.4
+                    ]
+
+    _ranges = [
+               (0x0000, 0x4000),
+               (0x8000, 0x8040),
+               (0x9000, 0x9040),
+               (0xA000, 0xA140),
+               (0xB000, 0xB440)
+              ]
+    _memsize = 0xB440
+    _upper = 512  # fw 1.22 expands from 256 to 512 channels
+    _aninames = 10
+    _mem_params = (_upper,  # number of channels
+                   _aninames,  # number of aninames
+                   )
+
+    def process_mmap(self):
+        mem_format = MEM_FORMAT % self._mem_params + MEM_FORMAT_A36PLUS
+        self._memobj = bitwise.parse(mem_format, self._mmap)
+
+
+@directory.register
+class A36plus8wRadio(A36plusRadio):
+    """Talkpod A36plus8w"""
+    VENDOR = "Talkpod"
+    MODEL = "A36plus_8w"
+
+    # ==========
+    # Notice to developers:
+    # The A36plus 8w support in this driver is currently based upon v1.6
+    # firmware.
+    # ==========
+
+    POWER_LEVELS = [chirp_common.PowerLevel("H", watts=8.00),
+                    chirp_common.PowerLevel("L", watts=1.00)]
+
+    _fingerprint = [b"\x00\x00\x00\xFA\x00\x20\x40\x05",  # fw 1.4
+                    b"\x00\x00\x00\xD8\x00\x20\x58\x05",  # fw 1.6
+                    ]
+
+
+@directory.register
+class AR730Radio(UVA37Radio):
+    """Abbree AR730"""
+    VENDOR = "Abbree"
+    MODEL = "AR-730"
+
+    # ==========
+    # Notice to developers:
+    # The AR-730 support in this driver is currently based upon v1.24
     # firmware.
     # ==========
 
@@ -1329,15 +1505,53 @@ class A36plusRadio(JC8810base):
                    (350000000, 390000000),
                    (400000000, 520000000)]
 
-    _magic = b"PROGRAMJC37U"
-    _fingerprint = [b"\x00\x00\x00\x42\x00\x20\xF0\x04",
-                    b"\x00\x00\x00\x5A\x00\x20\x08\x05"]
+
+@directory.register
+class RT630Radio(JC8810base):
+    """Radtel RT-630"""
+    VENDOR = "Radtel"
+    MODEL = "RT-630"
+
+    # ==========
+    # Notice to developers:
+    # The RT-630 support in this driver is currently based upon v0.07 firmware.
+    # ==========
+
+    _fingerprint = [b"\x00\x00\x00\x32\x00\x20\xD8\x04",  # fw 0.07
+                    ]
+
+    POWER_LEVELS = [chirp_common.PowerLevel("H", watts=5.00),
+                    chirp_common.PowerLevel("M", watts=4.00),
+                    chirp_common.PowerLevel("L", watts=2.00)]
+
+    VALID_BANDS = [(18000000, 108000000),
+                   (108000000, 136000000),
+                   (136000000, 300000000),
+                   (300000000, 660000000),
+                   (840000000, 1000000000)]
 
     _ranges = [
                (0x0000, 0x2000),
                (0x8000, 0x8040),
                (0x9000, 0x9040),
                (0xA000, 0xA140),
-               (0xB000, 0xB440)
-              ]
-    _memsize = 0xB440
+               (0xB000, 0xB2C0),
+               (0xB500, 0xB740)
+               ]
+    _memsize = 0xB740
+
+
+@directory.register
+class RT495Radio(RT630Radio):
+    """Radtel RT-495"""
+    VENDOR = "Radtel"
+    MODEL = "RT-495"
+
+    # ==========
+    # Notice to developers:
+    # The RT-495 support in this driver is currently based upon v0.07 firmware.
+    # ==========
+
+    _fingerprint = [b"\x00\x00\x00\x24\x00\x20\xD0\x04",  # fw 0.06
+                    b"\x00\x00\x00\x32\x00\x20\xD8\x04",  # fw 0.07
+                    ]

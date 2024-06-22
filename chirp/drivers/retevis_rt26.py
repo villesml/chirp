@@ -345,7 +345,6 @@ class RT26Radio(chirp_common.CloneModeRadio):
     VENDOR = "Retevis"
     MODEL = "RT26"
     BAUD_RATE = 4800
-    NEEDS_COMPAT_SERIAL = False
 
     _ranges = [
                (0x0000, 0x0190, 0x10),
@@ -369,7 +368,7 @@ class RT26Radio(chirp_common.CloneModeRadio):
                                 "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
         rf.valid_power_levels = RT26_POWER_LEVELS
         rf.valid_duplexes = ["", "-", "+", "split", "off"]
-        rf.valid_modes = ["NFM", "FM"]  # 12.5 KHz, 25 kHz.
+        rf.valid_modes = ["NFM", "FM"]  # 12.5 kHz, 25 kHz.
         rf.valid_dtcs_codes = RT26_DTCS
         rf.memory_bounds = (1, 16)
         rf.valid_tuning_steps = [2.5, 5., 6.25, 10., 12.5, 25.]
@@ -393,7 +392,7 @@ class RT26Radio(chirp_common.CloneModeRadio):
     def decode_tone(self, val):
         """Parse the tone data to decode from mem, it returns:
         Mode (''|DTCS|Tone), Value (None|###), Polarity (None,N,R)"""
-        if val.get_raw() == "\xFF\xFF":
+        if val.get_raw(asbytes=False) == "\xFF\xFF":
             return '', None, None
 
         val = int(val)
@@ -433,12 +432,12 @@ class RT26Radio(chirp_common.CloneModeRadio):
         mem.number = number
         mem.freq = int(_mem.rxfreq) * 10
 
-        # We'll consider any blank (i.e. 0MHz frequency) to be empty
+        # We'll consider any blank (i.e. 0 MHz frequency) to be empty
         if mem.freq == 0:
             mem.empty = True
             return mem
 
-        if _mem.rxfreq.get_raw() == "\xFF\xFF\xFF\xFF":
+        if _mem.rxfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             mem.freq = 0
             mem.empty = True
             return mem
@@ -446,6 +445,8 @@ class RT26Radio(chirp_common.CloneModeRadio):
         if int(_mem.rxfreq) == int(_mem.txfreq):
             mem.duplex = ""
             mem.offset = 0
+        elif _mem.txfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
+            mem.duplex = "off"
         else:
             mem.duplex = int(_mem.rxfreq) > int(_mem.txfreq) and "-" or "+"
             mem.offset = abs(int(_mem.rxfreq) - int(_mem.txfreq)) * 10
@@ -490,8 +491,7 @@ class RT26Radio(chirp_common.CloneModeRadio):
         _mem.rxfreq = mem.freq / 10
 
         if mem.duplex == "off":
-            for i in range(0, 4):
-                _mem.txfreq[i].set_raw("\xFF")
+            _mem.txfreq.fill_raw(b"\xFF")
         elif mem.duplex == "split":
             _mem.txfreq = mem.offset / 10
         elif mem.duplex == "+":

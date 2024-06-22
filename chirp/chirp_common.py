@@ -13,9 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from builtins import bytes
-from future import standard_library
-
 import base64
 import json
 import inspect
@@ -42,13 +39,14 @@ TONES = (
     225.7, 229.1, 233.6, 241.8, 250.3, 254.1,
 )
 
-TONES_EXTRA = (56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0,
-               62.5, 63.0, 64.0)
+OLD_TONES = tuple(x for x in sorted(
+    set(TONES) - set([159.8, 165.5, 171.3, 177.3, 183.5, 189.9,
+                      196.6, 199.5, 206.5, 229.1, 254.1])))
 
-OLD_TONES = list(TONES)
-[OLD_TONES.remove(x) for x in [159.8, 165.5, 171.3, 177.3, 183.5, 189.9,
-                               196.6, 199.5, 206.5, 229.1, 254.1]]
-OLD_TONES = tuple(OLD_TONES)
+
+def VALIDTONE(v):
+    return isinstance(v, float) and 50 < v < 300
+
 
 # 104 DTCS Codes
 DTCS_CODES = (
@@ -65,12 +63,10 @@ DTCS_CODES = (
 )
 
 # 512 Possible DTCS Codes
-ALL_DTCS_CODES = []
-for a in range(0, 8):
-    for b in range(0, 8):
-        for c in range(0, 8):
-            ALL_DTCS_CODES.append((a * 100) + (b * 10) + c)
-ALL_DTCS_CODES = tuple(ALL_DTCS_CODES)
+ALL_DTCS_CODES = tuple([((a * 100) + (b * 10) + c)
+                        for a in range(0, 8)
+                        for b in range(0, 8)
+                        for c in range(0, 8)])
 
 CROSS_MODES = (
     "Tone->Tone",
@@ -83,6 +79,10 @@ CROSS_MODES = (
     "Tone->"
 )
 
+# This is the "master" list of modes, and in general things should not be
+# added here without significant consideration. These must remain stable and
+# universal to allow importing memories between different radio vendors and
+# models.
 MODES = ("WFM", "FM", "NFM", "AM", "NAM", "DV", "USB", "LSB", "CW", "RTTY",
          "DIG", "PKT", "NCW", "NCWR", "CWR", "P25", "Auto", "RTTYR",
          "FSK", "FSKR", "DMR", "DN")
@@ -241,7 +241,7 @@ def parse_power(powerstr):
     return AutoNamedPowerLevel(watts)
 
 
-def parse_freq(freqstr):
+def parse_freq(freqstr: str) -> int:
     """Parse a frequency string and return the value in integral Hz"""
     freqstr = freqstr.strip()
     if freqstr == "":
@@ -252,14 +252,14 @@ def parse_freq(freqstr):
         return int(freqstr.split(" ")[0]) * 1000
 
     if "." in freqstr:
-        mhz, khz = freqstr.split(".")
-        if mhz == "":
-            mhz = 0
-        khz = khz.ljust(6, "0")
-        if len(khz) > 6:
-            raise ValueError("Invalid kHz value: %s", khz)
-        mhz = int(mhz) * 1000000
-        khz = int(khz)
+        _mhz, _khz = freqstr.split(".")
+        if _mhz == "":
+            _mhz = "0"
+        _khz = _khz.ljust(6, "0")
+        if len(_khz) > 6:
+            raise ValueError("Invalid kHz value: %s", _khz)
+        mhz = int(_mhz) * 1000000
+        khz = int(_khz)
     else:
         mhz = int(freqstr) * 1000000
         khz = 0
@@ -267,7 +267,7 @@ def parse_freq(freqstr):
     return mhz + khz
 
 
-def format_freq(freq):
+def format_freq(freq: int) -> str:
     """Format a frequency given in Hz as a string"""
 
     return "%i.%06i" % (freq / 1000000, freq % 1000000)
@@ -279,30 +279,30 @@ class ImmutableValueError(ValueError):
 
 class Memory:
     """Base class for a single radio memory"""
-    freq = 0
-    number = 0
-    extd_number = ""
-    name = ""
-    vfo = 0
-    rtone = 88.5
-    ctone = 88.5
-    dtcs = 23
-    rx_dtcs = 23
-    tmode = ""
-    cross_mode = "Tone->Tone"
-    dtcs_polarity = "NN"
-    skip = ""
-    power = None
-    duplex = ""
-    offset = 600000
-    mode = "FM"
-    tuning_step = 5.0
+    freq: int = 0
+    number: int = 0
+    extd_number: str = ""
+    name: str = ""
+    vfo: int = 0
+    rtone: float = 88.5
+    ctone: float = 88.5
+    dtcs: int = 23
+    rx_dtcs: int = 23
+    tmode: str = ""
+    cross_mode: str = "Tone->Tone"
+    dtcs_polarity: str = "NN"
+    skip: str = ""
+    power: PowerLevel | None = None
+    duplex: str = ""
+    offset: int = 600000
+    mode: str = "FM"
+    tuning_step: float = 5.0
 
-    comment = ""
+    comment: str = ""
 
-    empty = False
+    empty: bool = False
 
-    immutable = []
+    immutable: list[str] = []
 
     # A RadioSettingGroup of additional settings supported by the radio,
     # or an empty list if none
@@ -335,8 +335,8 @@ class Memory:
         self.immutable = []
 
     _valid_map = {
-        "rtone":          TONES + TONES_EXTRA,
-        "ctone":          TONES + TONES_EXTRA,
+        "rtone":          VALIDTONE,
+        "ctone":          VALIDTONE,
         "dtcs":           ALL_DTCS_CODES,
         "rx_dtcs":        ALL_DTCS_CODES,
         "tmode":          TONE_MODES,
@@ -350,7 +350,37 @@ class Memory:
     }
 
     def __repr__(self):
-        return str(self)
+        ident, vals = self.debug_dump()
+        return '<Memory %s: %s>' % (
+            ident, ','.join('%s=%r' % item for item in vals))
+
+    def debug_diff(self, other, delim='/'):
+        my_ident, my_vals = self.debug_dump()
+        my_vals = dict(my_vals)
+
+        om_ident, om_vals = other.debug_dump()
+        om_vals = dict(om_vals)
+
+        diffs = []
+        if my_ident != om_ident:
+            diffs.append('ident=%s%s%s' % (my_ident, delim, om_ident))
+        for k in sorted(my_vals.keys() | om_vals.keys()):
+            myval = my_vals.get(k, '<missing>')
+            omval = om_vals.get(k, '<missing>')
+            if myval != omval:
+                diffs.append('%s=%r%s%r' % (k, myval, delim, omval))
+        return ','.join(diffs)
+
+    def debug_dump(self):
+        vals = [(k, v) for k, v in self.__dict__.items()
+                if k not in ('extra', 'number', 'extd_number')]
+        for extra in self.extra:
+            vals.append(('extra.%s' % extra.get_name(), str(extra.value)))
+        if self.extd_number:
+            ident = '%s(%i)' % (self.extd_number, self.number)
+        else:
+            ident = str(self.number)
+        return ident, vals
 
     def dupe(self):
         """Return a deep copy of @self"""
@@ -382,9 +412,15 @@ class Memory:
             raise ImmutableValueError("Field %s is not " % name +
                                       "mutable on this memory")
 
-        if name in self._valid_map and val not in self._valid_map[name]:
-            raise ValueError("`%s' is not in valid list: %s" %
-                             (val, self._valid_map[name]))
+        if name in self._valid_map:
+            valid = self._valid_map[name]
+            if callable(valid):
+                if not valid(val):
+                    raise ValueError("`%s' is not a valid value for `%s'" % (
+                                         val, name))
+            elif val not in self._valid_map[name]:
+                raise ValueError("`%s' is not in valid list: %s" %
+                                 (val, self._valid_map[name]))
 
         self.__dict__[name] = val
 
@@ -559,10 +595,10 @@ class Memory:
 
 class DVMemory(Memory):
     """A Memory with D-STAR attributes"""
-    dv_urcall = "CQCQCQ"
-    dv_rpt1call = ""
-    dv_rpt2call = ""
-    dv_code = 0
+    dv_urcall: str = "CQCQCQ"
+    dv_rpt1call: str = ""
+    dv_rpt2call: str = ""
+    dv_code: int = 0
 
     def __str__(self):
         string = Memory.__str__(self)
@@ -616,6 +652,8 @@ def FrozenMemory(source):
                 setattr(self, k, v)
 
             self.__dict__['_frozen'] = True
+            for i in self.extra:
+                i.set_frozen()
 
         def __setattr__(self, k, v):
             if self._frozen:
@@ -797,6 +835,10 @@ def NTUPLE(size):
     return checktuple
 
 
+def TONELIST(v):
+    assert all(VALIDTONE(x) for x in v)
+
+
 class RadioFeatures:
     """Radio Feature Flags"""
     _valid_map = {
@@ -830,7 +872,7 @@ class RadioFeatures:
         "valid_characters":     STRING,
         "valid_name_length":    INT(),
         "valid_cross_modes":    LIST,
-        "valid_tones":          LIST,
+        "valid_tones":          TONELIST,
         "valid_dtcs_pols":      LIST,
         "valid_dtcs_codes":     LIST,
         "valid_special_chans":  LIST,
@@ -939,7 +981,7 @@ class RadioFeatures:
                   "alphanumeric tag")
         self.init("valid_cross_modes", list(CROSS_MODES),
                   "Supported tone cross modes")
-        self.init("valid_tones", list(TONES + TONES_EXTRA),
+        self.init("valid_tones", list(TONES),
                   "Support Tones")
         self.init("valid_dtcs_pols", ["NN", "RN", "NR", "RR"],
                   "Supported DTCS polarities")
@@ -987,6 +1029,7 @@ class RadioFeatures:
 
         if (self.valid_modes and
                 mem.mode not in self.valid_modes and
+                'mode' not in mem.immutable and
                 mem.mode != "Auto"):
             msg = ValidationError("Mode %s not supported" % mem.mode)
             msgs.append(msg)
@@ -1133,8 +1176,8 @@ class Radio(Alias):
     # Whether or not we should assert RTS when opening the serial port
     WANTS_RTS = True
     ALIASES = []
-    NEEDS_COMPAT_SERIAL = True
-    FORMATS = []
+    NEEDS_COMPAT_SERIAL = False
+    FORMATS: list[str] = []
 
     def status_fn(self, status):
         """Deliver @status to the UI"""
@@ -1144,25 +1187,25 @@ class Radio(Alias):
         self.errors = []
         self.pipe = pipe
 
-    def get_features(self):
+    def get_features(self) -> RadioFeatures:
         """Return a RadioFeatures object for this radio"""
         return RadioFeatures()
 
     @classmethod
-    def get_name(cls):
+    def get_name(cls) -> str:
         """Return a printable name for this radio"""
         return "%s %s" % (cls.VENDOR, cls.MODEL)
 
     @classmethod
-    def get_prompts(cls):
+    def get_prompts(cls) -> RadioPrompts:
         """Return a set of strings for use in prompts"""
         return RadioPrompts()
 
-    def set_pipe(self, pipe):
+    def set_pipe(self, pipe) -> None:
         """Set the serial object to be used for communications"""
         self.pipe = pipe
 
-    def get_memory(self, number):
+    def get_memory(self, number: int | str) -> Memory:
         """Return a Memory object for the memory at location @number
 
         Constructs and returns a generic Memory object for the given location
@@ -1174,12 +1217,15 @@ class Radio(Alias):
         NB: No changes to the radio's memory should occur as a result of
         calling get_memory().
         """
-        pass
+        raise NotImplementedError()
 
-    def erase_memory(self, number):
+    def erase_memory(self, number: int | str) -> None:
         """Erase memory at location @number"""
         mem = Memory()
-        mem.number = number
+        if isinstance(number, str):
+            mem.extd_number = number
+        else:
+            mem.number = number
         mem.empty = True
         self.set_memory(mem)
 
@@ -1187,7 +1233,7 @@ class Radio(Alias):
         """Get all the memories between @lo and @hi"""
         pass
 
-    def set_memory(self, memory):
+    def set_memory(self, memory: Memory) -> None:
         """Set the memory object @memory
 
         This method should copy generic attributes from @memory to the
@@ -1198,7 +1244,7 @@ class Radio(Alias):
         substitution will be made, or ValidationError if truly incompatible.
         In the latter case, set_memory() will not be called.
         """
-        pass
+        raise NotImplementedError()
 
     def get_mapping_models(self):
         """Returns a list of MappingModel objects (or an empty list)"""
@@ -1209,11 +1255,11 @@ class Radio(Alias):
                 return [bank_model]
         return []
 
-    def get_raw_memory(self, number):
+    def get_raw_memory(self, number: int | str) -> str:
         """Return a raw string describing the memory at @number"""
-        pass
+        return 'Memory<%r>' % number
 
-    def filter_name(self, name):
+    def filter_name(self, name: str) -> str:
         """Filter @name to just the length and characters supported"""
         rf = self.get_features()
         if rf.valid_characters == rf.valid_characters.upper():
@@ -1222,12 +1268,12 @@ class Radio(Alias):
         return "".join([x for x in name[:rf.valid_name_length]
                         if x in rf.valid_characters])
 
-    def get_sub_devices(self):
+    def get_sub_devices(self) -> list[Alias]:
         """Return a list of sub-device Radio objects, if
         RadioFeatures.has_sub_devices is True"""
         return []
 
-    def validate_memory(self, mem):
+    def validate_memory(self, mem: Memory) -> list[ValidationMessage]:
         """Return a list of warnings and errors that will be encountered
         if trying to set @mem on the current radio"""
         rf = self.get_features()
@@ -1250,7 +1296,7 @@ class Radio(Alias):
         pass
 
     @classmethod
-    def supports_format(cls, fmt):
+    def supports_format(cls, fmt: str) -> bool:
         """Returns true if file format @fmt is supported by this radio.
 
         This really should not be overridden by implementations
@@ -1258,7 +1304,7 @@ class Radio(Alias):
         """
         return fmt in cls.FORMATS
 
-    def check_set_memory_immutable_policy(self, existing, new):
+    def check_set_memory_immutable_policy(self, existing: Memory, new: Memory):
         """Checks whether or not a new memory will violate policy.
 
         Some radios have complex requirements for which fields of which
@@ -1341,7 +1387,45 @@ class FileBackedRadio(Radio):
         pass
 
 
-class CloneModeRadio(FileBackedRadio, ExternalMemoryProperties):
+def class_detected_models_attribute(cls):
+    return 'DETECTED_MODELS_%s' % cls.__name__
+
+
+class DetectableInterface:
+    @classmethod
+    def detect_from_serial(cls, pipe):
+        """Communicate with the radio via serial to determine proper class
+
+        Returns an in implementation of CloneModeRadio if detected, or raises
+        RadioError if not. If NotImplemented is raised, we assume that no
+        detection is possible or necessary.
+        """
+        detected = getattr(cls, class_detected_models_attribute(cls), None)
+        assert detected is None, (
+            'Class has detected models but no detect_from_serial() '
+            'implementation')
+        raise NotImplementedError()
+
+    @classmethod
+    def detected_models(cls, include_self=True):
+        detected = getattr(cls, class_detected_models_attribute(cls), [])
+        # Only include this class if it is registered
+        if include_self and hasattr(cls, '_DETECTED_BY'):
+            extra = [cls]
+        else:
+            extra = []
+        return extra + list(detected)
+
+    @classmethod
+    def detect_model(cls, detected_cls):
+        detected_attr = class_detected_models_attribute(cls)
+        if getattr(cls, detected_attr, None) is None:
+            setattr(cls, detected_attr, [])
+        getattr(cls, detected_attr).append(detected_cls)
+
+
+class CloneModeRadio(FileBackedRadio, ExternalMemoryProperties,
+                     DetectableInterface):
     """A clone-mode radio does a full memory dump in and out and we store
     an image of the radio into an image file"""
     FILE_EXTENSION = "img"
@@ -1496,8 +1580,11 @@ class CloneModeRadio(FileBackedRadio, ExternalMemoryProperties):
         rf = self.get_features()
         if not rf.has_comment and isinstance(memory.number, int):
             self._metadata.setdefault('mem_extra', {})
-            self._metadata['mem_extra']['%04i_comment' % memory.number] = (
-                memory.comment)
+            key = '%04i_comment' % memory.number
+            if not memory.comment:
+                self._metadata['mem_extra'].pop(key, None)
+            else:
+                self._metadata['mem_extra'][key] = memory.comment
 
     def erase_memory_extra(self, number):
         rf = self.get_features()
@@ -1506,7 +1593,7 @@ class CloneModeRadio(FileBackedRadio, ExternalMemoryProperties):
             self._metadata['mem_extra'].pop('%04i_comment' % number, None)
 
 
-class LiveRadio(Radio):
+class LiveRadio(Radio, DetectableInterface):
     """Base class for all Live-Mode radios"""
     pass
 
@@ -1578,47 +1665,47 @@ class Status:
 
 
 def is_fractional_step(freq):
-    """Returns True if @freq requires a 12.5kHz or 6.25kHz step"""
+    """Returns True if @freq requires a 12.5 kHz or 6.25 kHz step"""
     return not is_5_0(freq) and (is_12_5(freq) or is_6_25(freq))
 
 
 def is_5_0(freq):
-    """Returns True if @freq is reachable by a 5kHz step"""
+    """Returns True if @freq is reachable by a 5 kHz step"""
     return (freq % 5000) == 0
 
 
 def is_10_0(freq):
-    """Returns True if @freq is reachable by a 10kHz step"""
+    """Returns True if @freq is reachable by a 10 kHz step"""
     return (freq % 10000) == 0
 
 
 def is_12_5(freq):
-    """Returns True if @freq is reachable by a 12.5kHz step"""
+    """Returns True if @freq is reachable by a 12.5 kHz step"""
     return (freq % 12500) == 0
 
 
 def is_6_25(freq):
-    """Returns True if @freq is reachable by a 6.25kHz step"""
+    """Returns True if @freq is reachable by a 6.25 kHz step"""
     return (freq % 6250) == 0
 
 
 def is_2_5(freq):
-    """Returns True if @freq is reachable by a 2.5kHz step"""
+    """Returns True if @freq is reachable by a 2.5 kHz step"""
     return (freq % 2500) == 0
 
 
 def is_8_33(freq):
-    """Returns True if @freq is reachable by a 8.33kHz step"""
+    """Returns True if @freq is reachable by a 8.33 kHz step"""
     return (freq % 25000) in [0, 8330, 16660]
 
 
 def is_1_0(freq):
-    """Returns True if @freq is reachable by a 1.0kHz step"""
+    """Returns True if @freq is reachable by a 1.0 kHz step"""
     return (freq % 1000) == 0
 
 
 def is_0_5(freq):
-    """Returns True if @freq is reachable by a 0.5kHz step"""
+    """Returns True if @freq is reachable by a 0.5 kHz step"""
     return (freq % 500) == 0
 
 
@@ -1655,7 +1742,7 @@ def required_step(freq, allowed=None):
 
 
 def fix_rounded_step(freq):
-    """Some radios imply the last bit of 12.5kHz and 6.25kHz step
+    """Some radios imply the last bit of 12.5 kHz and 6.25 kHz step
     frequencies. Take the base @freq and return the corrected one"""
     try:
         required_step(freq)
@@ -1908,7 +1995,6 @@ def http_user_agent():
 def urlretrieve(url, fn):
     """Grab an URL and save it in a specified file"""
 
-    standard_library.install_aliases()
     import urllib.request
     import urllib.error
 

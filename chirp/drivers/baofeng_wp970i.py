@@ -16,7 +16,7 @@
 
 import logging
 
-from chirp.drivers import baofeng_common
+from chirp.drivers import baofeng_common as bfc
 from chirp import chirp_common, directory
 from chirp import bitwise
 from chirp.settings import RadioSettingGroup, RadioSetting, \
@@ -34,6 +34,9 @@ MSTRING_WP970I = b"\x50\xBB\xFF\x20\x14\x04\x13"
 
 # Baofeng UV-9G magic string
 MSTRING_UV9G = b"\x50\xBB\xFF\x20\x12\x05\x25"
+
+# Baofeng UV-S9X3 magic string
+MSTRING_UVS9X3 = b"\x50\xBB\xFF\x20\x12\x07\x25"
 
 
 DTMF_CHARS = "0123456789 *#ABCD"
@@ -80,11 +83,10 @@ def model_match(cls, data):
         return False
 
 
-class WP970I(baofeng_common.BaofengCommonHT):
+class WP970I(bfc.BaofengCommonHT):
     """Baofeng WP970I"""
     VENDOR = "Baofeng"
     MODEL = "WP970I"
-    NEEDS_COMPAT_SERIAL = False
 
     _tri_band = False
     _fileid = []
@@ -121,7 +123,7 @@ class WP970I(baofeng_common.BaofengCommonHT):
     SCODE_LIST = LIST_SCODE
 
     MEM_FORMAT = """
-    #seekto 0x0000;
+    // #seekto 0x0000;
     struct {
       lbcd rxfreq[4];
       lbcd txfreq[4];
@@ -163,20 +165,20 @@ class WP970I(baofeng_common.BaofengCommonHT):
     struct {
       u8 squelch;
       u8 step;
-      u8 unknown1;
+      u8 unknown_e22;
       u8 save;
       u8 vox;
-      u8 unknown2;
+      u8 unknown_e25;
       u8 abr;
       u8 tdr;
       u8 beep;
       u8 timeout;
-      u8 unknown3[4];
+      u8 unknown_e2a[4];
       u8 voice;
-      u8 unknown4;
+      u8 unknown_e2f;
       u8 dtmfst;
-      u8 unknown5;
-      u8 unknown12:6,
+      u8 unknown_e31;
+      u8 unknown_e32:6,
          screv:2;
       u8 pttid;
       u8 pttlt;
@@ -185,7 +187,7 @@ class WP970I(baofeng_common.BaofengCommonHT):
       u8 bcl;
       u8 autolk;
       u8 sftd;
-      u8 unknown6[3];
+      u8 unknown_e3a[3];
       u8 wtled;
       u8 rxled;
       u8 txled;
@@ -200,13 +202,13 @@ class WP970I(baofeng_common.BaofengCommonHT):
       u8 rogerrx;
       u8 tdrch;
       u8 displayab:1,
-         unknown1:2,
+         unknown_e4a1:2,
          fmradio:1,
          alarm:1,
-         unknown2:1,
+         unknown_e4a2:1,
          reset:1,
          menu:1;
-      u8 unknown1:6,
+      u8 unknown_e4b:6,
          singleptt:1,
          vfomrlock:1;
       u8 workmode;
@@ -234,7 +236,7 @@ class WP970I(baofeng_common.BaofengCommonHT):
          sftd:2,
          scode:4;
       u8 unknown4;
-      u8 unused3:1
+      u8 unused3:1,
          step:3,
          unused4:4;
       u8 unused5:1,
@@ -336,7 +338,7 @@ class WP970I(baofeng_common.BaofengCommonHT):
         return rp
 
     def get_features(self):
-        rf = baofeng_common.BaofengCommonHT.get_features(self)
+        rf = bfc.BaofengCommonHT.get_features(self)
         rf.valid_tuning_steps = STEPS
         return rf
 
@@ -644,12 +646,6 @@ class WP970I(baofeng_common.BaofengCommonHT):
                                                    _mem.wmchannel.mrchb))
         work.append(rs)
 
-        def convert_bytes_to_freq(bytes):
-            real_freq = 0
-            for byte in bytes:
-                real_freq = (real_freq * 10) + byte
-            return chirp_common.format_freq(real_freq * 10)
-
         def my_validate(value):
             value = chirp_common.parse_freq(value)
             msg = ("Can't be less than %i.0000")
@@ -670,14 +666,14 @@ class WP970I(baofeng_common.BaofengCommonHT):
                 value /= 10
 
         val1a = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.a.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.a.freq))
         val1a.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.a.freq", "VFO A Frequency", val1a)
         rs.set_apply_callback(apply_freq, _mem.vfo.a)
         work.append(rs)
 
         val1b = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.b.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.b.freq))
         val1b.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.b.freq", "VFO B Frequency", val1b)
         rs.set_apply_callback(apply_freq, _mem.vfo.b)
@@ -971,6 +967,37 @@ class BFA58S(WP970I):
 
 
 @directory.register
+class UVS9X3(BFA58S):
+    VENDOR = "Baofeng"
+    MODEL = "UV-S9X3"
+    ALIASES = []
+    _magic = [MSTRING_UVS9X3, ]
+
+
+@directory.register
+class BF5RXRadio(BFA58S):
+    VENDOR = "Baofeng"
+    MODEL = "5RX"
+    ALIASES = []
+    _magic = [MSTRING_UVS9X3, ]
+
+    _air_range = (108000000, 136000000)
+    _vhf_range = (136000000, 174000000)
+    _vhf2_range = (200000000, 260000000)
+    _uhf2_range = (350000000, 390000000)
+    _uhf_range = (400000000, 520000000)
+
+    def get_features(self):
+        rf = WP970I.get_features(self)
+        rf.valid_bands = [self._air_range,
+                          self._vhf_range,
+                          self._vhf2_range,
+                          self._uhf2_range,
+                          self._uhf_range]
+        return rf
+
+
+@directory.register
 class UV9R(WP970I):
     """Baofeng UV-9R"""
     VENDOR = "Baofeng"
@@ -986,7 +1013,7 @@ class UV9G(WP970I):
     LENGTH_NAME = 7
 
     POWER_LEVELS = [chirp_common.PowerLevel("High", watts=5.00),
-                    chirp_common.PowerLevel("Med",  watts=0.50),
+                    chirp_common.PowerLevel("Med",  watts=1.00),
                     chirp_common.PowerLevel("Low",  watts=0.50)]
     _magic = [MSTRING_UV9G, ]
     _gmrs = False  # sold as GMRS radio but supports full band TX/RX

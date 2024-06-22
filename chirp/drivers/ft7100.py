@@ -178,7 +178,7 @@ struct mem {
   u8   dtcs_index;
   u8   is_mode_am:1,
        unknown71:2,
-       is_packet96:1
+       is_packet96:1,
        unknown72:2,
        power_index:2;
   u8   unknown81:2,
@@ -301,7 +301,7 @@ struct
 #seekto 0xc7;
   u8        opt_03_arts_mode_uhf_1_2;
 #seekto 0xa3;
-  u8        opt_03_arts_mode_vhf_2_2;
+  u8        opt_03_arts_mode_uhf_2_2;
 
 #seekto 0x8a;
   u8        opt_04_beep_1_2;
@@ -530,7 +530,6 @@ class FT7100Radio(YaesuCloneModeRadio):
     VARIANT = ""
     IDBLOCK = b"Vartex Standard AH003M M-Map V04"
     BAUD_RATE = 9600
-    NEEDS_COMPAT_SERIAL = False
 
     # Return information about this radio's features, including
     # how many memories it has, what bands it supports, etc
@@ -663,7 +662,7 @@ class FT7100Radio(YaesuCloneModeRadio):
         if _mem.is_split:
             mem.offset = int(_mem.freq_tx_Hz)
         else:
-            mem.offset = int(_mem.offset_10khz)*10000   # 10kHz to Hz
+            mem.offset = int(_mem.offset_10khz)*10000   # 10 kHz to Hz
 
         if _mem.is_mode_am:
             mem.mode = "AM"
@@ -771,7 +770,8 @@ class FT7100Radio(YaesuCloneModeRadio):
             else:
                 setattr(_mem, setting.get_name(), setting.value)
 
-        LOG.debug("encoded mem\n%s\n", (util.hexprint(_mem.get_raw()[0:25])))
+        LOG.debug("encoded mem\n%s\n",
+                  (util.hexprint(_mem.get_raw(asbytes=False)[0:25])))
         LOG.debug(repr(_mem))
 
     def get_settings(self):
@@ -839,7 +839,7 @@ class FT7100Radio(YaesuCloneModeRadio):
                 RadioSettingValueList(opts, opts[_overlay.cwid])))
 
         # 6  Callsign during ARTS operation.
-        cwidw = _overlay.cwidw.get_raw()
+        cwidw = _overlay.cwidw.get_raw(asbytes=False)
         cwidw = cwidw.rstrip('\x00')
         val = RadioSettingValueString(0, 6, cwidw)
         val.set_charset(CHARSET)

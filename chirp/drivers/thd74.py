@@ -48,8 +48,7 @@ struct {
 } flags[1200];
 
 #seekto 0x4000;
-struct {
-  struct {
+struct memory {
     ul32 freq;
     ul32 offset;
     u8 tuning_step:4,
@@ -81,11 +80,14 @@ struct {
     char dv_rpt2call[8];
     u8 unknown9:1,
        dv_code:7;
-  } memories[6];
-  u8 pad[16];
-} memgroups[210];
+};
 
-#seekto 0x10000;
+struct {
+  struct memory memories[6];
+  u8 pad[16];
+} memgroups[192];
+
+//#seekto 0x10000;
 struct {
   char name[16];
 } names[1200];
@@ -180,7 +182,6 @@ class THD74Radio(chirp_common.CloneModeRadio,
                  chirp_common.IcomDstarSupport):
     VENDOR = "Kenwood"
     MODEL = "TH-D74 (clone mode)"
-    NEEDS_COMPAT_SERIAL = False
     BAUD_RATE = 9600
     HARDWARE_FLOW = sys.platform == "darwin"  # only OS X driver needs hw flow
     FORMATS = [directory.register_format('Kenwood MCP-D74', '*.d74')]
@@ -307,6 +308,7 @@ class THD74Radio(chirp_common.CloneModeRadio,
             raise errors.RadioError("No response to ID command")
 
     def _detect_baud(self):
+        id = None
         for baud in [9600, 19200, 38400, 57600]:
             self.pipe.baudrate = baud
             try:
@@ -317,11 +319,16 @@ class THD74Radio(chirp_common.CloneModeRadio,
             try:
                 id = self.get_id()
                 LOG.info("Radio %s at %i baud" % (id, baud))
-                return True
+                break
             except errors.RadioError:
                 pass
 
-        raise errors.RadioError("No response from radio")
+        if id and not self.MODEL.startswith(id):
+            raise errors.RadioError(_('Unsupported model %r' % id))
+        elif id:
+            return id
+        else:
+            raise errors.RadioError("No response from radio")
 
     def process_mmap(self):
         self._memobj = bitwise.parse(MEM_FORMAT, self._mmap)
@@ -524,3 +531,8 @@ class THD74Radio(chirp_common.CloneModeRadio,
             return True
         else:
             return chirp_common.CloneModeRadio.match_model(filedata, filename)
+
+
+@directory.register
+class THD75Radio(THD74Radio):
+    MODEL = 'TH-D75'

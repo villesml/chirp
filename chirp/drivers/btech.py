@@ -15,12 +15,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from builtins import bytes
-
 import struct
 import logging
 
 from time import sleep
+from chirp.drivers import baofeng_common as bfc
 from chirp import chirp_common, directory, memmap
 from chirp import bitwise, errors, util
 from chirp.settings import RadioSettingGroup, RadioSetting, \
@@ -75,7 +74,7 @@ LIST_OFF1TO50 = ["Off"] + ["%s seconds" % x for x in range(1, 51)]
 LIST_OFF1TO60 = ["Off"] + ["%s seconds" % x for x in range(1, 61)]
 LIST_PONMSG = ["Full", "Message", "Battery voltage"]
 LIST_REPM = ["Off", "Carrier", "CTCSS or DCS", "Tone", "DTMF"]
-LIST_REPS = ["1000 Hz", "1450 Hz", "1750 Hz", "2100Hz"]
+LIST_REPS = ["1000 Hz", "1450 Hz", "1750 Hz", "2100 Hz"]
 LIST_REPSW = ["Off", "RX", "TX"]
 LIST_RPTDL = ["Off"] + ["%s ms" % x for x in range(1, 11)]
 LIST_SCMODE = ["Off", "PTT-SC", "MEM-SC", "PON-SC"]
@@ -269,6 +268,7 @@ KT8900D_fp = b"VC2002"
 KT8900D_fp1 = b"VC8632"
 KT8900D_fp2 = b"VC3402"
 KT8900D_fp3 = b"VC7062"
+KT8900D_fp4 = b"VC3062"
 
 # LUITON LT-588UV
 LT588UV_fp = b"V2G1F4"
@@ -279,6 +279,7 @@ LT588UV_fp1 = b"V2G214"
 KT8R_fp = b"MCB264"
 KT8R_fp1 = b"MCB284"
 KT8R_fp2 = b"MC5264"
+KT8R_fp3 = b"MCB254"
 
 # QYT KT5800 (dual band)
 KT5800_fp = b"VCB222"
@@ -659,7 +660,6 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
     COLOR_LCD3 = False  # Color HT Radios
     COLOR_LCD4 = False  # Waterproof Mobile Radios
     NAME_LENGTH = 6
-    NEEDS_COMPAT_SERIAL = False
     UPLOAD_MEM_SIZE = 0X3100
     _power_levels = [chirp_common.PowerLevel("High", watts=25),
                      chirp_common.PowerLevel("Low", watts=10)]
@@ -669,7 +669,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
     _350_range = (350000000, 391000000)
     _upper = 199
     _magic = MSTRING
-    _fileid = None
+    _fileid = []
     _id2 = False
     btech3 = False
     _gmrs = False
@@ -816,6 +816,12 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
             LOG.error(msg)
             raise errors.InvalidDataError(msg)
 
+    def _is_txinh(self, _mem):
+        raw_tx = b""
+        for i in range(0, 4):
+            raw_tx += _mem.txfreq[i].get_raw()
+        return raw_tx == b"\xFF\xFF\xFF\xFF"
+
     def get_memory(self, number):
         """Get the mem representation from the radio image"""
         _mem = self._memobj.memory[number]
@@ -827,14 +833,14 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
         # Memory number
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xFF":
+        if _mem.get_raw()[:1] == b"\xFF":
             mem.empty = True
             return mem
 
         # Freq and offset
         mem.freq = int(_mem.rxfreq) * 10
         # tx freq can be blank
-        if _mem.get_raw()[4] == "\xFF":
+        if self._is_txinh(_mem):
             # TX freq not set
             mem.offset = 0
             mem.duplex = "off"
@@ -959,7 +965,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
                         immutable = ["duplex", "offset"]
                     elif mem.freq in GMRS_FREQS3:
                         # GMRS repeater channels, always either simplex or
-                        # +5MHz
+                        # +5 MHz
                         if mem.duplex != '+':
                             mem.duplex = ''
                             mem.offset = 0
@@ -985,7 +991,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
                         immutable = ["duplex", "offset"]
                     elif mem.freq in GMRS_FREQS3:
                         # GMRS repeater channels, always either simplex or
-                        # +5MHz
+                        # +5 MHz
                         if mem.duplex != '+':
                             mem.duplex = ''
                             mem.offset = 0
@@ -1005,7 +1011,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
         mem_was_empty = False
         # same method as used in get_memory for determining if mem is empty
         # doing this BEFORE overwriting it with new values ...
-        if _mem.get_raw()[0] == "\xFF":
+        if _mem.get_raw(asbytes=False)[0] == "\xFF":
             LOG.debug("This mem was empty before")
             mem_was_empty = True
 
@@ -1125,7 +1131,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
         sql = RadioSetting("settings.sql", "Squelch level", rs)
         basic.append(sql)
 
-        if self.MODEL == "GMRS-50X1":
+        if self.MODEL == "GMRS-50X1" or self.MODEL == "GMRS-50V2":
             rs = RadioSettingValueBoolean(_mem.settings.autolk)
             autolk = RadioSetting("settings.autolk", "Auto keylock", rs)
             basic.append(autolk)
@@ -1467,7 +1473,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
                 rxfc = RadioSetting("settings.rxfc", "RX-FC", rs)
                 basic.append(rxfc)
 
-            if not self.MODEL == "KT-8R":
+            if not self.MODEL == "KT-8R" and not self.MODEL == "GMRS-50V2":
                 val = min(_mem.settings.txdisp, len(LIST_TXDISP) - 1)
                 rs = RadioSettingValueList(LIST_TXDISP, LIST_TXDISP[val])
                 txdisp = RadioSetting("settings.txdisp",
@@ -1566,7 +1572,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
             repsw = RadioSetting("settings.repsw", "Repeater SW", rs)
             basic.append(repsw)
 
-        model_list = ["GMRS-50X1", "KT-8R", "KT-WP12", "WP-9900"]
+        model_list = ["KT-8R", "KT-WP12", "WP-9900"]
         if self.MODEL not in model_list:
             val = min(_mem.settings.repm, len(LIST_REPM) - 1)
             rs = RadioSettingValueList(LIST_REPM, LIST_REPM[val])
@@ -1648,8 +1654,8 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
             basic.append(scmode)
 
         if self.MODEL in ["KT-8R", "UV-25X2", "UV-25X4", "UV-50X2",
-                          "GMRS-50X1", "GMRS-20V2", "UV-50X2_G2",
-                          "GMRS-50V2", "UV-25X2_G2", "UV-25X4_G2"]:
+                          "GMRS-20V2", "UV-50X2_G2", "GMRS-50V2",
+                          "UV-25X2_G2", "UV-25X4_G2"]:
             val = min(_mem.settings.tmrtx, len(LIST_TMRTX) - 1)
             rs = RadioSettingValueList(LIST_TMRTX, LIST_TMRTX[val])
             tmrtx = RadioSetting("settings.tmrtx", "TX in multi-standby", rs)
@@ -1891,12 +1897,6 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
                 mrchd = RadioSetting("settings2.mrchd", "MR D channel", rs)
                 work.append(mrchd)
 
-        def convert_bytes_to_freq(bytes):
-            real_freq = 0
-            for byte in bytes:
-                real_freq = (real_freq * 10) + byte
-            return chirp_common.format_freq(real_freq * 10)
-
         def my_validate(value):
             _vhf_lower = int(convert_bytes_to_limit(_ranges.vhf_low))
             _vhf_upper = int(convert_bytes_to_limit(_ranges.vhf_high))
@@ -1949,14 +1949,14 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
         _vhf_upper = (convert_bytes_to_limit(_ranges.vhf_high))
         _uhf_lower = (convert_bytes_to_limit(_ranges.uhf_low))
 
-        val1a = RadioSettingValueString(0, 10, convert_bytes_to_freq(
-                                        _mem.vfo.a.freq))
+        val1a = RadioSettingValueString(0, 10,
+                                        bfc.bcd_decode_freq(_mem.vfo.a.freq))
         val1a.set_validate_callback(my_validate)
         vfoafreq = RadioSetting("vfo.a.freq", "VFO A frequency", val1a)
         vfoafreq.set_apply_callback(apply_freq, _mem.vfo.a)
         work.append(vfoafreq)
 
-        val = convert_bytes_to_freq(_mem.vfo.b.freq)
+        val = bfc.bcd_decode_freq(_mem.vfo.b.freq)
         if self.MODEL in ["GMRS-50V2", "GMRS-50X1"]:
             if val[:3] > _vhf_upper and val[:3] < _uhf_lower:
                 val = "462.562500"
@@ -1967,15 +1967,16 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
         work.append(vfobfreq)
 
         if self.COLOR_LCD:
-            val1c = RadioSettingValueString(0, 10, convert_bytes_to_freq(
-                                            _mem.vfo.c.freq))
+            val1c = RadioSettingValueString(0, 10,
+                                            bfc.bcd_decode_freq(
+                                                _mem.vfo.c.freq))
             val1c.set_validate_callback(my_validate)
             vfocfreq = RadioSetting("vfo.c.freq", "VFO C frequency", val1c)
             vfocfreq.set_apply_callback(apply_freq, _mem.vfo.c)
             work.append(vfocfreq)
 
             if not self.COLOR_LCD4:
-                val = convert_bytes_to_freq(_mem.vfo.d.freq)
+                val = bfc.bcd_decode_freq(_mem.vfo.d.freq)
                 if self.MODEL in ["GMRS-50V2", "GMRS-50X1"]:
                     if val[:3] > _vhf_upper and val[:3] < _uhf_lower:
                         val = "462.562500"
@@ -2244,7 +2245,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
             def fm_validate(value):
                 if value == 0:
                     return chirp_common.format_freq(value)
-                if not (87.5 <= value and value <= 108.0):  # 87.5-108MHz
+                if not (87.5 <= value and value <= 108.0):  # 87.5-108 MHz
                     msg = ("FM-Preset-Frequency: " +
                            "Must be between 87.5 and 108 MHz")
                     raise InvalidValueError(msg)
@@ -2275,8 +2276,8 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
                                         preset.broadcast_station_name)
 
                 val = RadioSettingValueFloat(0, 108,
-                                             convert_bytes_to_freq(
-                                                 preset.freq))
+                                             bfc.bcd_decode_freq(
+                                                preset.freq))
                 fmfreq = RadioSetting("fm_presets_" + str(i) + "_freq",
                                       "Frequency " + str(i), val)
                 val.set_validate_callback(fm_validate)
@@ -3143,7 +3144,7 @@ class BTechMobileCommon(chirp_common.CloneModeRadio,
 
 
 MEM_FORMAT = """
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
@@ -3289,7 +3290,7 @@ struct {
   u8 standard;   // one out of LIST_5TONE_STANDARDS
 } _5tone_codes[15];
 
-#seekto 0x25F0;
+// #seekto 0x25F0;
 struct {
   u8 _5tone_delay1; // * 10ms
   u8 _5tone_delay2; // * 10ms
@@ -3316,7 +3317,7 @@ struct {
   u8 code[16]; // 0=x0A, A=0x0D, B=0x0E, C=0x0F, D=0x00, #=0x0C *=0x0B
 } dtmf_codes[15];
 
-#seekto 0x29F0;
+// #seekto 0x29F0;
 struct {
   u8 dtmfspeed_on;  //list with 50..2000ms in steps of 10
   u8 dtmfspeed_off; //list with 50..2000ms in steps of 10
@@ -3463,7 +3464,7 @@ class BTech(BTechMobileCommon):
         LOG.info("Radio ranges: VHF %d to %d" % vhf)
         LOG.info("Radio ranges: UHF %d to %d" % uhf)
 
-        # 220MHz radios case
+        # 220 MHz radios case
         if self.MODEL in ["UV-2501+220", "KT8900R"]:
             vhf2 = _decode_ranges(ranges.vhf2_low, ranges.vhf2_high)
             LOG.info("Radio ranges: VHF(220) %d to %d" % vhf2)
@@ -3630,7 +3631,7 @@ class LT588UV(BTech):
 
 
 COLOR_MEM_FORMAT = """
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
@@ -3770,7 +3771,7 @@ struct {
   struct settings_vfo d;
 } vfo;
 
-#seekto 0x0F80;
+// #seekto 0x0F80;
 struct {
   char line1[8];
   char line2[8];
@@ -3804,7 +3805,7 @@ struct {
   u8 standard;   // one out of LIST_5TONE_STANDARDS
 } _5tone_codes[15];
 
-#seekto 0x25F0;
+// #seekto 0x25F0;
 struct {
   u8 _5tone_delay1; // * 10ms
   u8 _5tone_delay2; // * 10ms
@@ -3831,7 +3832,7 @@ struct {
   u8 code[16]; // 0=x0A, A=0x0D, B=0x0E, C=0x0F, D=0x00, #=0x0C *=0x0B
 } dtmf_codes[15];
 
-#seekto 0x29F0;
+// #seekto 0x29F0;
 struct {
   u8 dtmfspeed_on;  //list with 50..2000ms in steps of 10
   u8 dtmfspeed_off; //list with 50..2000ms in steps of 10
@@ -3970,12 +3971,12 @@ class BTechColor(BTechMobileCommon):
 
         # the additional bands
         if self.MODEL in ["UV-25X4", "KT7900D"]:
-            # 200MHz band
+            # 200 MHz band
             vhf2 = _decode_ranges(ranges.vhf2_low, ranges.vhf2_high)
             LOG.info("Radio ranges: VHF(220) %d to %d" % vhf2)
             self._220_range = vhf2
 
-            # 350MHz band
+            # 350 MHz band
             uhf2 = _decode_ranges(ranges.uhf2_low, ranges.uhf2_high)
             LOG.info("Radio ranges: UHF(350) %d to %d" % uhf2)
             self._350_range = uhf2
@@ -4095,7 +4096,7 @@ class KT8900D(BTechColor):
     _vhf_range = (136000000, 175000000)
     _uhf_range = (400000000, 481000000)
     _magic = MSTRING_KT8900D
-    _fileid = [KT8900D_fp3, KT8900D_fp2, KT8900D_fp1, KT8900D_fp]
+    _fileid = [KT8900D_fp4, KT8900D_fp3, KT8900D_fp2, KT8900D_fp1, KT8900D_fp]
 
     # Clones
     ALIASES = [OTGRadioV1]
@@ -4154,7 +4155,7 @@ class DB25G(BTechColor):
         msgs = super().validate_memory(mem)
 
         _msg_duplex = 'Duplex must be "off" for this frequency'
-        _msg_offset = 'Only simplex or +5MHz offset allowed on GMRS'
+        _msg_offset = 'Only simplex or +5 MHz offset allowed on GMRS'
 
         if mem.freq in GMRS_FREQS3:
             if mem.duplex and mem.offset != 5000000:
@@ -4175,7 +4176,7 @@ class DB25G(BTechColor):
 
 
 GMRS_MEM_FORMAT = """
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
@@ -4199,7 +4200,7 @@ struct {
      pttid:2;
 } memory[256];
 
-#seekto 0x1000;
+// #seekto 0x1000;
 struct {
   char name[7];
   u8 unknown1[9];
@@ -4221,7 +4222,7 @@ struct {
   u8 standard;   // one out of LIST_5TONE_STANDARDS
 } _5tone_codes[15];
 
-#seekto 0x25F0;
+// #seekto 0x25F0;
 struct {
   u8 _5tone_delay1; // * 10ms
   u8 _5tone_delay2; // * 10ms
@@ -4243,7 +4244,7 @@ struct {
   u8 decode_reset_time; // * 100 + 100ms
 } _5tone_settings;
 
-#seekto 0x2900;
+// #seekto 0x2900;
 struct {
   u8 code[16]; // 0=x0A, A=0x0D, B=0x0E, C=0x0F, D=0x00, #=0x0C *=0x0B
 } dtmf_codes[15];
@@ -4334,73 +4335,9 @@ struct {
   char broadcast_station_name[6];
   u8 unknown[2];
 } fm_radio_preset[16];
+"""
 
-#seekto 0x3200;
-struct {
-  u8 tmr;
-  u8 unknown1;
-  u8 sql;
-  u8 unknown2;
-  u8 unused3204:7,
-     autolk:1;
-  u8 tot;
-  u8 apo;
-  u8 unknown3;
-  u8 abr;
-  u8 unused3209:7,
-     beep:1;
-  u8 unknown4[4];
-  u8 dtmfst;
-  u8 unknown5[2];
-  u8 screv;
-  u8 unknown6[2];
-  u8 pttid;
-  u8 pttlt;
-  u8 unknown7;
-  u8 emctp;
-  u8 emcch;
-  u8 unusedE19:7,
-     sigbp:1;
-  u8 vox;
-  u8 camdf;
-  u8 cbmdf;
-  u8 ccmdf;
-  u8 cdmdf;
-  u8 langua;
-  u8 sync;
-
-
-  u8 stfc;
-  u8 mffc;
-  u8 sfafc;
-  u8 sfbfc;
-  u8 sfcfc;
-  u8 sfdfc;
-  u8 subfc;
-  u8 fmfc;
-  u8 sigfc;
-  u8 modfc;
-  u8 menufc;
-  u8 txfc;
-  u8 txdisp;
-  u8 unknown9[5];
-  u8 anil;
-  u8 reps;
-  u8 repm;
-  u8 tmrmr;
-  u8 unusedE37:7,
-     ste:1;
-  u8 rpste;
-  u8 rptdl;
-  u8 dtmfg;
-  u8 mgain;
-  u8 skiptx;
-  u8 scmode;
-  u8 tmrtx;
-  u8 unknown10;
-  u8 earpho;
-} settings;
-
+GMRS_MEM_FORMAT_PT2 = """
 #seekto 0x3280;
 struct {
   u8 unknown1;
@@ -4454,6 +4391,11 @@ struct {
   struct settings_vfo d;
 } vfo;
 
+#seekto 0x33B0;
+struct {
+  char line[16];
+} static_msg;
+
 #seekto 0x3D80;
 struct {
   u8 vhf_low[3];
@@ -4472,16 +4414,144 @@ struct {
   u8 uhf2_high[3];
 } ranges;
 
-#seekto 0x33B0;
-struct {
-  char line[16];
-} static_msg;
-
 #seekto 0x3F70;
 struct {
   char fp[6];
 } fingerprint;
 
+"""
+
+
+GMRS_ORIG_MEM_FORMAT = """
+#seekto 0x3200;
+struct {
+  u8 tmr;
+  u8 unknown1;
+  u8 sql;
+  u8 unknown2;
+  u8 unused3204:7,
+     autolk:1;
+  u8 tot;
+  u8 apo;
+  u8 unknown3;
+  u8 abr;
+  u8 unused3209:7,
+     beep:1;
+  u8 unknown4[4];
+  u8 dtmfst;
+  u8 unknown5[2];
+  u8 screv;
+  u8 unknown6[2];
+  u8 pttid;
+  u8 pttlt;
+  u8 unknown7;
+  u8 emctp;
+  u8 emcch;
+  u8 unusedE19:7,
+     sigbp:1;
+  u8 vox;
+  u8 camdf;
+  u8 cbmdf;
+  u8 ccmdf;
+  u8 cdmdf;
+  u8 langua;
+  u8 sync;
+  u8 stfc;
+  u8 mffc;
+  u8 sfafc;
+  u8 sfbfc;
+  u8 sfcfc;
+  u8 sfdfc;
+  u8 subfc;
+  u8 fmfc;
+  u8 sigfc;
+  u8 modfc;
+  u8 menufc;
+  u8 txfc;
+  u8 txdisp;
+  u8 unknown9[5];
+  u8 anil;
+  u8 reps;
+  u8 repm;
+  u8 tmrmr;
+  u8 unusedE37:7,
+     ste:1;
+  u8 rpste;
+  u8 rptdl;
+  u8 dtmfg;
+  u8 mgain;
+  u8 skiptx;
+  u8 scmode;
+  u8 tmrtx;
+  u8 unknown10;
+  u8 earpho;
+} settings;
+"""
+
+
+GMRS_V2_MEM_FORMAT = """
+#seekto 0x3200;
+struct {
+  u8 tmr;
+  u8 unknown1;
+  u8 sql;
+  u8 unknown2;
+  u8 unused3204:7,
+     autolk:1;
+  u8 tot;
+  u8 apo;
+  u8 unknown3;
+  u8 abr;
+  u8 unused3209:7,
+     beep:1;
+  u8 unknown4[4];
+  u8 dtmfst;
+  u8 unknown5[2];
+  u8 screv;
+  u8 unknown6[2];
+  u8 pttid;
+  u8 pttlt;
+  u8 unknown7;
+  u8 emctp;
+  u8 emcch;
+  u8 unusedE19:7,
+     sigbp:1;
+  u8 unknown8;   // vox
+  u8 camdf;
+  u8 cbmdf;
+  u8 ccmdf;
+  u8 cdmdf;
+  u8 vox;        // langua
+  u8 sync;
+  u8 stfc;
+  u8 mffc;
+  u8 sfafc;
+  u8 sfbfc;
+  u8 sfcfc;
+  u8 sfdfc;
+  u8 subfc;
+  u8 fmfc;
+  u8 sigfc;
+  u8 modfc;
+  u8 menufc;
+  u8 txfc;
+  u8 unknown9[5];
+  u8 anil;
+  u8 reps;
+  u8 repm;
+  u8 tmrmr;
+  u8 unusedE37:7,
+     ste:1;
+  u8 rpste;
+  u8 rptdl;
+  u8 dtmfg;
+  u8 mgain;
+  u8 skiptx;
+  u8 scmode;
+  u8 tmrtx;
+  u8 unknown10[2];
+  u8 earpho;
+} settings;
 """
 
 
@@ -4496,7 +4566,9 @@ class BTechGMRS(BTechMobileCommon):
         """Process the mem map into the mem object"""
 
         # Get it
-        self._memobj = bitwise.parse(GMRS_MEM_FORMAT, self._mmap)
+        mem_format = GMRS_MEM_FORMAT + GMRS_ORIG_MEM_FORMAT + \
+            GMRS_MEM_FORMAT_PT2
+        self._memobj = bitwise.parse(mem_format, self._mmap)
 
         # load specific parameters from the radio image
         self.set_options()
@@ -4543,7 +4615,7 @@ class GMRS50X1(BTechGMRS):
         msgs = super().validate_memory(mem)
 
         _msg_duplex = 'Duplex must be "off" for this frequency'
-        _msg_offset = 'Only simplex or +5MHz offset allowed on GMRS'
+        _msg_offset = 'Only simplex or +5 MHz offset allowed on GMRS'
 
         if not (mem.number >= 1 and mem.number <= 30):
             if mem.duplex != "off":
@@ -4573,11 +4645,22 @@ class GMRS50V2(BTechGMRS):
     _fileid = [GMRS50X1_fp1, GMRS50X1_fp]
     _gmrs = True
 
+    def process_mmap(self):
+        """Process the mem map into the mem object"""
+
+        # Get it
+        mem_format = GMRS_MEM_FORMAT + GMRS_V2_MEM_FORMAT + \
+            GMRS_MEM_FORMAT_PT2
+        self._memobj = bitwise.parse(mem_format, self._mmap)
+
+        # load specific parameters from the radio image
+        self.set_options()
+
     def validate_memory(self, mem):
         msgs = super().validate_memory(mem)
 
         _msg_duplex = 'Duplex must be "off" for this frequency'
-        _msg_offset = 'Only simplex or +5MHz offset allowed on GMRS'
+        _msg_offset = 'Only simplex or +5 MHz offset allowed on GMRS'
 
         if mem.freq not in GMRS_FREQS:
             if mem.duplex != "off":
@@ -4599,7 +4682,7 @@ class GMRS50V2(BTechGMRS):
 
 
 COLORHT_MEM_FORMAT = """
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
@@ -4766,7 +4849,7 @@ struct {
   u8 standard;   // one out of LIST_5TONE_STANDARDS
 } _5tone_codes[15];
 
-#seekto 0x25F0;
+// #seekto 0x25F0;
 struct {
   u8 _5tone_delay1; // * 10ms
   u8 _5tone_delay2; // * 10ms
@@ -4793,7 +4876,7 @@ struct {
   u8 code[16]; // 0=x0A, A=0x0D, B=0x0E, C=0x0F, D=0x00, #=0x0C *=0x0B
 } dtmf_codes[15];
 
-#seekto 0x29F0;
+// #seekto 0x29F0;
 struct {
   u8 dtmfspeed_on;  //list with 50..2000ms in steps of 10
   u8 dtmfspeed_off; //list with 50..2000ms in steps of 10
@@ -4933,12 +5016,12 @@ class QYTColorHT(BTechMobileCommon):
 
         # the additional bands
         if self.MODEL in ["KT-8R"]:
-            # 200MHz band
+            # 200 MHz band
             vhf2 = _decode_ranges(ranges.vhf2_low, ranges.vhf2_high)
             LOG.info("Radio ranges: VHF(220) %d to %d" % vhf2)
             self._220_range = vhf2
 
-            # 350MHz band
+            # 350 MHz band
             uhf2 = _decode_ranges(ranges.uhf2_low, ranges.uhf2_high)
             LOG.info("Radio ranges: UHF(350) %d to %d" % uhf2)
             self._350_range = uhf2
@@ -4961,13 +5044,13 @@ class KT8R(QYTColorHT):
     _uhf_range = (400000000, 481000000)
     _350_range = (350000000, 391000000)
     _magic = MSTRING_KT8R
-    _fileid = [KT8R_fp2, KT8R_fp1, KT8R_fp]
+    _fileid = [KT8R_fp2, KT8R_fp1, KT8R_fp, KT8R_fp3]
     _power_levels = [chirp_common.PowerLevel("High", watts=5),
                      chirp_common.PowerLevel("Low", watts=1)]
 
 
 COLOR9900_MEM_FORMAT = """
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
@@ -5107,7 +5190,7 @@ struct {
   struct settings_vfo d;
 } vfo;
 
-#seekto 0x0F80;
+// #seekto 0x0F80;
 struct {
   char line1[8];
   char line2[8];
@@ -5146,7 +5229,7 @@ struct {
   u8 standard;   // one out of LIST_5TONE_STANDARDS
 } _5tone_codes[15];
 
-#seekto 0x25F0;
+// #seekto 0x25F0;
 struct {
   u8 _5tone_delay1; // * 10ms
   u8 _5tone_delay2; // * 10ms
@@ -5173,7 +5256,7 @@ struct {
   u8 code[16]; // 0=x0A, A=0x0D, B=0x0E, C=0x0F, D=0x00, #=0x0C *=0x0B
 } dtmf_codes[15];
 
-#seekto 0x29F0;
+// #seekto 0x29F0;
 struct {
   u8 dtmfspeed_on;  //list with 50..2000ms in steps of 10      // 9f0
   u8 dtmfspeed_off; //list with 50..2000ms in steps of 10      // 9f1
@@ -5280,7 +5363,7 @@ struct {
 
 
 COLOR20V2_MEM_FORMAT = """
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
@@ -5425,7 +5508,7 @@ struct {
   struct settings_vfo d;
 } vfo;
 
-#seekto 0x0F80;
+// #seekto 0x0F80;
 struct {
   char line1[8];
   char line2[8];
@@ -5464,7 +5547,7 @@ struct {
   u8 standard;   // one out of LIST_5TONE_STANDARDS
 } _5tone_codes[15];
 
-#seekto 0x25F0;
+// #seekto 0x25F0;
 struct {
   u8 _5tone_delay1; // * 10ms
   u8 _5tone_delay2; // * 10ms
@@ -5491,7 +5574,7 @@ struct {
   u8 code[16]; // 0=x0A, A=0x0D, B=0x0E, C=0x0F, D=0x00, #=0x0C *=0x0B
 } dtmf_codes[15];
 
-#seekto 0x29F0;
+// #seekto 0x29F0;
 struct {
   u8 dtmfspeed_on;  //list with 50..2000ms in steps of 10      // 9f0
   u8 dtmfspeed_off; //list with 50..2000ms in steps of 10      // 9f1
@@ -5692,7 +5775,7 @@ class GMRS20V2(BTechColorWP):
         msgs = super().validate_memory(mem)
 
         _msg_duplex = 'Duplex must be "off" for this frequency'
-        _msg_offset = 'Only simplex or +5MHz offset allowed on GMRS'
+        _msg_offset = 'Only simplex or +5 MHz offset allowed on GMRS'
 
         if mem.freq not in GMRS_FREQS:
             if mem.duplex != "off":

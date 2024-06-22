@@ -16,7 +16,6 @@
 
 """FT817 - FT817ND - FT817ND/US management module"""
 
-from builtins import bytes
 from chirp.drivers import yaesu_clone
 from chirp import chirp_common, util, memmap, errors, directory, bitwise
 from chirp.settings import RadioSetting, RadioSettingGroup, \
@@ -37,7 +36,6 @@ class FT817Radio(yaesu_clone.YaesuCloneModeRadio):
     """Yaesu FT-817"""
     BAUD_RATE = 9600
     MODEL = "FT-817"
-    NEEDS_COMPAT_SERIAL = False
     _model = ""
     _US_model = False
 
@@ -818,7 +816,7 @@ class FT817Radio(yaesu_clone.YaesuCloneModeRadio):
                           RadioSettingValueList(options,
                                                 options[_settings.batt_chg]))
         basic.append(rs)
-        options = ["440Hz", "880Hz"]
+        options = ["440 Hz", "880 Hz"]
         rs = RadioSetting("beep_freq", "Beep frequency",
                           RadioSettingValueList(options,
                                                 options[_settings.beep_freq]))
@@ -1027,7 +1025,7 @@ class FT817Radio(yaesu_clone.YaesuCloneModeRadio):
         rs = RadioSetting("spl", "Split",
                           RadioSettingValueBoolean(_settings.spl))
         panelcontr.append(rs)
-        options = ["None", "Up", "Down"]
+        options = ["None", "Up", "Down", "PMS"]
         rs = RadioSetting("scn_mode", "Scan mode",
                           RadioSettingValueList(options,
                                                 options[_settings.scn_mode]))
@@ -1129,7 +1127,7 @@ class FT817NDRadio(FT817Radio):
 class FT817NDUSRadio(FT817Radio):
 
     """Yaesu FT-817ND (US version)"""
-    # seems that radios configured for 5MHz operations send one packet
+    # seems that radios configured for 5 MHz operations send one packet
     # more than others so we have to distinguish sub models
     MODEL = "FT-817ND (US)"
 

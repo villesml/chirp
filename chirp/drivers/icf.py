@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from builtins import bytes
-
 import binascii
 import hashlib
 import os
@@ -805,7 +803,6 @@ class IcomCloneModeRadio(chirp_common.CloneModeRadio):
     """Base class for Icom clone-mode radios"""
     VENDOR = "Icom"
     BAUDRATE = 9600
-    NEEDS_COMPAT_SERIAL = False
     FORMATS = [directory.register_format('Icom ICF', '*.icf')]
 
     _model = "\x00\x00\x00\x00"  # 4-byte model string

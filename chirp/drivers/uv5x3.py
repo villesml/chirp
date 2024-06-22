@@ -16,14 +16,14 @@
 
 import logging
 
-from chirp.drivers import baofeng_common
+from chirp.drivers import baofeng_common as bfc
 from chirp import chirp_common, directory
 from chirp import bitwise
 from chirp.settings import RadioSettingGroup, RadioSetting, \
     RadioSettingValueBoolean, RadioSettingValueList, \
     RadioSettingValueString, RadioSettingValueInteger, \
     RadioSettingValueFloat, RadioSettings, \
-    InvalidValueError
+    InvalidValueError, InternalError
 
 LOG = logging.getLogger(__name__)
 
@@ -94,11 +94,10 @@ def model_match(cls, data):
 
 
 @directory.register
-class UV5X3(baofeng_common.BaofengCommonHT):
+class UV5X3(bfc.BaofengCommonHT):
     """BTech UV-5X3"""
     VENDOR = "BTECH"
     MODEL = "UV-5X3"
-    NEEDS_COMPAT_SERIAL = False
 
     _fileid = [UV5X3_fp3,
                UV5X3_fp2,
@@ -136,7 +135,7 @@ class UV5X3(baofeng_common.BaofengCommonHT):
     SCODE_LIST = LIST_SCODE
 
     MEM_FORMAT = """
-    #seekto 0x0000;
+    // #seekto 0x0000;
     struct {
       lbcd rxfreq[4];
       lbcd txfreq[4];
@@ -780,15 +779,6 @@ class UV5X3(baofeng_common.BaofengCommonHT):
                                                    _mem.wmchannel.mrchb))
         work.append(rs)
 
-        def convert_bytes_to_freq(bytes):
-            real_freq = 0
-            for byte in bytes:
-                if byte > 9:
-                    real_freq = 0
-                    continue
-                real_freq = (real_freq * 10) + byte
-            return chirp_common.format_freq(real_freq * 10)
-
         def my_validate(value):
             _vhf_lower = int(_mem.limits.vhf.lower)
             _vhf_upper = int(_mem.limits.vhf.upper)
@@ -849,67 +839,81 @@ class UV5X3(baofeng_common.BaofengCommonHT):
                 value /= 10
 
         val1a = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.a.freq))
+                                        bfc.bcd_decode_freq(
+                                            _mem.vfo.a.freq))
         val1a.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.a.freq", "VFO A Frequency", val1a)
         rs.set_apply_callback(apply_freq, _mem.vfo.a)
         work.append(rs)
 
         val1b = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.b.freq))
+                                        bfc.bcd_decode_freq(
+                                            _mem.vfo.b.freq))
         val1b.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.b.freq", "VFO B Frequency", val1b)
         rs.set_apply_callback(apply_freq, _mem.vfo.b)
         work.append(rs)
 
-        val = convert_bytes_to_freq(_mem.subvfoa.vhf.freq)
-        if int(float(val)) == 0:
-            val = str(int(_mem.limits.vhf.lower)) + ".000000"
+        try:
+            val = bfc.bcd_decode_freq(_mem.subvfoa.vhf.freq)
+        except InternalError:
+            LOG.debug('Failed to decode VFO A VHF (Saved)')
+            val = "000.000000"
         val1a = RadioSettingValueString(0, 10, val)
         val1a.set_validate_callback(my_vhf_validate)
         rs = RadioSetting("subvfoa.vhf.freq", "VFO A VHF (Saved)", val1a)
         rs.set_apply_callback(apply_freq, _mem.subvfoa.vhf)
         work.append(rs)
 
-        val = convert_bytes_to_freq(_mem.subvfob.vhf.freq)
-        if int(float(val)) == 0:
-            val = str(int(_mem.limits.vhf.lower)) + ".000000"
+        try:
+            val = bfc.bcd_decode_freq(_mem.subvfob.vhf.freq)
+        except InternalError:
+            LOG.debug('Failed to decode VFO B VHF (Saved)')
+            val = "000.000000"
         val1b = RadioSettingValueString(0, 10, val)
         val1b.set_validate_callback(my_vhf_validate)
         rs = RadioSetting("subvfob.vhf.freq", "VFO B VHF (Saved)", val1b)
         rs.set_apply_callback(apply_freq, _mem.subvfob.vhf)
         work.append(rs)
 
-        val = convert_bytes_to_freq(_mem.subvfoa.vhf2.freq)
-        if int(float(val)) == 0:
-            val = str(int(_mem.limits.vhf2.lower)) + ".000000"
+        try:
+            val = bfc.bcd_decode_freq(_mem.subvfoa.vhf2.freq)
+        except InternalError:
+            LOG.debug('Failed to decode VFO A VHF2 (Saved)')
+            val = "000.000000"
         val1a = RadioSettingValueString(0, 10, val)
         val1a.set_validate_callback(my_vhf2_validate)
         rs = RadioSetting("subvfoa.vhf2.freq", "VFO A VHF2 (Saved)", val1a)
         rs.set_apply_callback(apply_freq, _mem.subvfoa.vhf2)
         work.append(rs)
 
-        val = convert_bytes_to_freq(_mem.subvfob.vhf2.freq)
-        if int(float(val)) == 0:
-            val = str(int(_mem.limits.vhf2.lower)) + ".000000"
+        try:
+            val = bfc.bcd_decode_freq(_mem.subvfob.vhf2.freq)
+        except settings.InternalError:
+            LOG.debug('Failed to decode VFO B VHF2 (Saved)')
+            val = "000.000000"
         val1b = RadioSettingValueString(0, 10, val)
         val1b.set_validate_callback(my_vhf2_validate)
         rs = RadioSetting("subvfob.vhf2.freq", "VFO B VHF2 (Saved)", val1b)
         rs.set_apply_callback(apply_freq, _mem.subvfob.vhf2)
         work.append(rs)
 
-        val = convert_bytes_to_freq(_mem.subvfoa.uhf.freq)
-        if int(float(val)) == 0:
-            val = str(int(_mem.limits.uhf.lower)) + ".000000"
+        try:
+            val = bfc.bcd_decode_freq(_mem.subvfoa.uhf.freq)
+        except InternalError:
+            LOG.debug('Failed to decode VFO A UHF (Saved)')
+            val = "000.000000"
         val1a = RadioSettingValueString(0, 10, val)
         val1a.set_validate_callback(my_uhf_validate)
         rs = RadioSetting("subvfoa.uhf.freq", "VFO A UHF (Saved)", val1a)
         rs.set_apply_callback(apply_freq, _mem.subvfoa.uhf)
         work.append(rs)
 
-        val = convert_bytes_to_freq(_mem.subvfob.uhf.freq)
-        if int(float(val)) == 0:
-            val = str(int(_mem.limits.uhf.lower)) + ".000000"
+        try:
+            val = bfc.bcd_decode_freq(_mem.subvfob.uhf.freq)
+        except InternalError:
+            LOG.debug('Failed to decode VFO B UHF (Saved)')
+            val = "000.000000"
         val1b = RadioSettingValueString(0, 10, val)
         val1b.set_validate_callback(my_uhf_validate)
         rs = RadioSetting("subvfob.uhf.freq", "VFO B UHF (Saved)", val1b)

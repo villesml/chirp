@@ -246,7 +246,7 @@ def variable_len_resp(pipe):
     return response
 
 
-def sendcmd(pipe, cmd, response_len):
+def sendcmd(pipe, cmd, response_len, retry=0):
     """
     send a command bytelist to radio,receive and return the resulting bytelist.
     Input: pipe         - serial port object to use
@@ -274,8 +274,13 @@ def sendcmd(pipe, cmd, response_len):
         response = b""
     ack = pipe.read(1)
     if ack != b'\x06':
-        LOG.debug("missing ack: expected 0x06, got" + util.hexprint(ack))
-        raise errors.RadioError("Incorrect ACK on serial port.")
+        if retry < 5:
+            LOG.debug("retry: " + str(retry))
+            retry += 1
+            return sendcmd(pipe, cmd, response_len, retry)
+        else:
+            LOG.debug("missing ack: expected 0x06, got" + util.hexprint(ack))
+            raise errors.RadioError("Incorrect ACK on serial port.")
     return response
 
 
@@ -557,7 +562,7 @@ TONE_DICT = {}          # encode sql_type.
 CROSS_DICT = {}         # encode sql_type.
 
 for sql_type in reversed(range(0, len(RADIO_TMODES))):
-    sql_type_row = RADIO_TMODES[sql_type]
+    sql_type_row: list = RADIO_TMODES[sql_type]
     for decode_row in sql_type_row[0]:
         suppress = None
         if len(decode_row) == 3:
@@ -671,7 +676,7 @@ class YaesuSC35GenericRadio(chirp_common.CloneModeRadio,
     MODEL = "SCU-35Generic"  # No radio directly uses the base class
     BAUD_RATE = 9600
     MAX_MEM_SLOT = 200
-    NEEDS_COMPAT_SERIAL = False
+    DUPLEX_OFF_VIA_OFFSET = False
 
     # These settings are common to all radios in this family.
     _valid_chars = chirp_common.CHARSET_ASCII
@@ -1144,11 +1149,33 @@ class YaesuSC35GenericRadio(chirp_common.CloneModeRadio,
                 mem.offset = txfreq
             else:
                 mem.offset = int(_mem.offset) * 25000 * freq_offset_factor
+            if self.DUPLEX_OFF_VIA_OFFSET and mem.duplex in ['+', '-']:
+                band = self.band_for_freq(mem.freq)
+                if band is not None and self.DUPLEX_OFF_VIA_OFFSET[band]:
+                    sign = 1 if mem.duplex == "+" else -1
+                    tx = mem.freq + (sign * mem.offset)
+                    if self.band_for_freq(tx) is None:
+                        mem.duplex = "off"
+                        mem.offset = 0
             self.decode_sql(mem, _mem)
             mem.power = POWER_LEVELS[2 - _mem.tx_pwr]
             mem.mode = ["FM", "NFM"][_mem.tx_width]
             mem.tuning_step = STEP_CODE[_mem.step]
         return mem
+
+    def band_for_freq(self, freq):
+        """
+        We need to find the valid_bands list index a frequency falls
+        within, if any, to help determine if DUPLEX_OFF_VIA_OFFSET
+        logic is required
+        """
+        band_index = None
+        for i, limits in enumerate(self.valid_bands):
+            lo, hi = limits
+            if lo <= freq <= hi:
+                band_index = i
+                break
+        return band_index
 
     def enforce_band(self, memloc, freq, mem_num, sname):
         """
@@ -1184,20 +1211,26 @@ class YaesuSC35GenericRadio(chirp_common.CloneModeRadio,
         _mem.tx_width = mem.mode == "NFM"
         _mem.step = STEP_CODE.index(mem.tuning_step)
 
+        duplex = mem.duplex
+        offset = mem.offset
+        if self.DUPLEX_OFF_VIA_OFFSET and duplex == "off":
+            band = self.band_for_freq(mem.freq)
+            if band is not None and self.DUPLEX_OFF_VIA_OFFSET[band]:
+                duplex, offset = self.DUPLEX_OFF_VIA_OFFSET[band]
+
         freq_offset_factor = self.freq_offset_factor
         # FT-25R/65R Asia version (US version is 0)?
         if self.subtype == 3 and freq_offset_factor == 2:
             freq_offset_factor = 1  # 25000 scaler
-        _mem.offset = mem.offset / (25000 * freq_offset_factor)
-        duplex = mem.duplex
+        _mem.offset = offset / (25000 * freq_offset_factor)
         if regtype in ["memory", "pms"]:
             ndx = num - 1
             store_bit(self._memobj.enable, ndx, True)
             store_bit(self._memobj.scan, ndx, SKIPS.index(mem.skip))
             nametrim = (mem.name + "        ")[:8]
             self._memobj.names[ndx].chrs = bytearray(nametrim, "ascii")
-            if mem.duplex == "split":
-                txfreq = mem.offset / 10
+            if duplex == "split":
+                txfreq = offset / 10
             self._memobj.txfreqs[num-1].freq = txfreq
         _mem.duplex = DUPLEX.index(duplex)
         if regtype in ["vfo", "home"]:
@@ -1326,6 +1359,11 @@ class YaesuFT65RRadio(YaesuFT65GenericRadio):
     DUPLEX_AUTO = DUPLEX_AUTO_US
     legal_steps = STEP_CODE
     BAND_ASSIGNMENTS = BAND_ASSIGNMENTS_DUALBAND
+    DUPLEX_OFF_VIA_OFFSET = [  # matches the order of valid_bands
+        None,  # Don't modify broadcast FM memories
+        ("-", 99_950_000),
+        ("+", 99_950_000),
+        ]
 
 
 @directory.register

@@ -59,7 +59,6 @@ class KGUVD1PRadio(chirp_common.CloneModeRadio,
     VENDOR = "Wouxun"
     MODEL = "KG-UVD1P"
     _model = b"KG669V"
-    NEEDS_COMPAT_SERIAL = False
 
     _querymodel = (b"HiWOUXUN\x02", b"PROGUV6X\x02")
 
@@ -154,9 +153,9 @@ class KGUVD1PRadio(chirp_common.CloneModeRadio,
              tx_time_out_alert:4;
           u8 unknown_flag_16:6,
              vfo_a_ch_disp:2;
-          u8 unknown_flag_15:6,
+          u8 unknown_flag_27:6,
              scan_mode:2;
-          u8 unknown_flag_16:7,
+          u8 unknown_flag_28:7,
              kbd_lock:1;
           u8 unknown_flag_17:6,
              ponmsg:2;
@@ -180,7 +179,7 @@ class KGUVD1PRadio(chirp_common.CloneModeRadio,
           u8 unknown_flag_24:7,
              dual_band_receive:1;
           u8 current_vfo:1,
-             unknown_flag_24:7;
+             unknown_flag_26:7;
           u8 unknown_8[2];
           u8 mode_password[6];
           u8 reset_password[6];
@@ -743,10 +742,7 @@ class KGUVD1PRadio(chirp_common.CloneModeRadio,
                   (txmode, _mem.tx_tone, rxmode, _mem.rx_tone))
 
     def _is_txinh(self, _mem):
-        raw_tx = ""
-        for i in range(0, 4):
-            raw_tx += _mem.tx_freq[i].get_raw()
-        return raw_tx == "\xFF\xFF\xFF\xFF"
+        return _mem.tx_freq.get_raw() == b"\xFF\xFF\xFF\xFF"
 
     def get_memory(self, number):
         _mem = self._memobj.memory[number - 1]
@@ -755,7 +751,7 @@ class KGUVD1PRadio(chirp_common.CloneModeRadio,
         mem = chirp_common.Memory()
         mem.number = number
 
-        if _mem.get_raw() == ("\xff" * 16):
+        if _mem.get_raw() == (b"\xff" * 16):
             mem.empty = True
             return mem
 
@@ -851,15 +847,14 @@ class KGUVD1PRadio(chirp_common.CloneModeRadio,
             wipe_memory(_mem, "\xFF")
             return
 
-        if _mem.get_raw() == ("\xFF" * 16):
+        if _mem.get_raw() == (b"\xFF" * 16):
             wipe_memory(_mem, "\x00")
 
         _mem.rx_freq = int(mem.freq / 10)
         if mem.duplex == "split":
             _mem.tx_freq = int(mem.offset / 10)
         elif mem.duplex == "off":
-            for i in range(0, 4):
-                _mem.tx_freq[i].set_raw("\xFF")
+            _mem.tx_freq.fill_raw(b"\xFF")
         elif mem.duplex == "+":
             _mem.tx_freq = int(mem.freq / 10) + int(mem.offset / 10)
         elif mem.duplex == "-":
@@ -979,9 +974,9 @@ class KGUV6DRadio(KGUVD1PRadio):
              tx_time_out_alert:4;
           u8 unknown_flag_16:6,
              vfo_a_ch_disp:2;
-          u8 unknown_flag_15:6,
+          u8 unknown_flag_20:6,
              scan_mode:2;
-          u8 unknown_flag_16:7,
+          u8 unknown_flag_31:7,
              kbd_lock:1;
           u8 unknown_flag_17:6,
              ponmsg:2;
@@ -990,11 +985,11 @@ class KGUV6DRadio(KGUVD1PRadio):
           u8 unknown_5[1];
           u8 unknown_flag_19:7,
              auto_backlight:1;
-          u8 unknown_flag_20:7,
+          u8 unknown_flag_26:7,
              sos_ch:1;
           u8 unknown_6;
           u8 sd_available;
-          u8 unknown_flag_21:7,
+          u8 unknown_flag_32:7,
              auto_lock_kbd:1;
           u8 unknown_flag_22:4,
              vfo_b_squelch:4;
@@ -1005,7 +1000,7 @@ class KGUV6DRadio(KGUVD1PRadio):
           u8 unknown_flag_24:7,
              dual_band_receive:1;
           u8 current_vfo:1,
-             unknown_flag_24:7;
+             unknown_flag_33:7;
           u8 unknown_8[2];
           u8 mode_password[6];
           u8 reset_password[6];
@@ -1017,7 +1012,7 @@ class KGUV6DRadio(KGUVD1PRadio):
           u8 vfo_b_cur_chan;
         } settings;
 
-        #seekto 0x0f60;
+        //#seekto 0x0f60;
         struct {
           lbcd rx_freq[4];
           lbcd tx_freq[4];

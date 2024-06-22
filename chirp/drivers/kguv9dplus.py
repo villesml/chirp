@@ -762,7 +762,7 @@ def freq2int(val, min, max):
 def int2freq(freq):
     """
     Convert a u32 frequency to a string for UI data entry/display
-    This is stored in the radio as units of 10Hz which we compensate to Hz.
+    This is stored in the radio as units of 10 Hz which we compensate to Hz.
     A value of -1 indicates <no frequency>, i.e. unused channel.
     """
     if (int(freq) > 0):
@@ -773,7 +773,7 @@ def int2freq(freq):
 
 
 def freq2short(val, min, max):
-    """Convert a frequency as a string to a u16 which is units of 10KHz
+    """Convert a frequency as a string to a u16 which is units of 10 kHz
     """
     _freq = chirp_common.parse_freq(str(val))
     if _freq > max or _freq < min:
@@ -787,7 +787,7 @@ def freq2short(val, min, max):
 def short2freq(freq):
     """
        Convert a short frequency to a string for UI data entry/display
-       This is stored in the radio as units of 10KHz which we
+       This is stored in the radio as units of 10 kHz which we
        compensate to Hz.
        A value of -1 indicates <no frequency>, i.e. unused channel.
     """
@@ -1091,7 +1091,6 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
     _model = b"KG-UV9D"
     _rev = b"00"  # default rev for the radio I know about...
     _file_ident = b"kg-uv9d"
-    NEEDS_COMPAT_SERIAL = False
     BAUD_RATE = 19200
     POWER_LEVELS = [chirp_common.PowerLevel("L", watts=1),
                     chirp_common.PowerLevel("M", watts=2),
@@ -1162,7 +1161,7 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
         seen differences between my radio and the dump named
         KG-UV9D-Plus-OutOfBox-Read.txt from bug #3509. The first
         five bands match the OEM windows
-        app except the 350-400 band. The OOB trace has the 700MHz
+        app except the 350-400 band. The OOB trace has the 700 MHz
         band different. This is speculation at this point.
 
         TODO: This could be smarter and reject a radio not actually
@@ -2071,7 +2070,7 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
                 hi = 512000000
 
         prefix = "vfo_%s.band_%d" % (area, band)
-        bf = RadioSettingGroup(prefix, "%dMHz Band" % band)
+        bf = RadioSettingGroup(prefix, "%d MHz Band" % band)
         freq = RadioSettingValueString(0, 15, int2freq(c.freq * 10))
         rs = RadioSetting(prefix + ".freq", "Rx Frequency", freq)
         rs.set_apply_callback(apply_freq, lo, hi, c)
@@ -2257,7 +2256,7 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
         """Build the frequency limits tab
         """
 
-        # The stop limits in the factory KG-UV9D Mate memory image are 1MHz
+        # The stop limits in the factory KG-UV9D Mate memory image are 1 MHz
         # higher than the published specs. The settings panel will crash if
         # it encounters a value outside of these ranges.
         hard_limits = {
@@ -2273,12 +2272,12 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
             obj.start = f
 
         def apply_freq_stop(setting, low, high, obj):
-            """Sets the stop limit to 1MHz below the input value"""
+            """Sets the stop limit to 1 MHz below the input value"""
 
             # The firmware has an off-by-1MHz error with stop limits.
-            # If you set the stop limit to 1480 (148MHz), you can still tune
-            # up to 148.99MHz. To compensate for this,
-            # we subtract 10 increments of 100MHz before storing the value.
+            # If you set the stop limit to 1480 (148 MHz), you can still tune
+            # up to 148.99 MHz. To compensate for this,
+            # we subtract 10 increments of 100 MHz before storing the value.
             f = freq2short(setting.value, low, high) - 10
             obj.stop = f
 
@@ -2302,7 +2301,7 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
                                         limits)
             fl.append(start_rs)
 
-            # Add 10 increments of 100MHz before displaying to compensate for
+            # Add 10 increments of 100 MHz before displaying to compensate for
             # the firmware off-by-1MHz problem.
             stop_freq = RadioSettingValueString(1,
                                                 20,
@@ -2330,7 +2329,7 @@ class KGUV9DPlusRadio(chirp_common.CloneModeRadio,
                                         hard_limits[name][1], limits)
             fl.append(start_rs)
 
-            # Add 10 increments of 100MHz before displaying to compensate for
+            # Add 10 increments of 100 MHz before displaying to compensate for
             # the firmware off-by-1MHz problem.
             stop_freq = RadioSettingValueString(1,
                                                 20,
@@ -2474,7 +2473,6 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
     _model = b"KG-UV9D"
     _rev = b"02"  # default rev for the radio I know about...
     _file_ident = b"kg-uv9px"
-    NEEDS_COMPAT_SERIAL = False
     _valid_steps = STEPS
     _step_list = STEP_LIST
 
@@ -2720,7 +2718,7 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
                 hi = 512997500
 
         prefix = "vfo_%s.band_%d" % (area, band)
-        bf = RadioSettingGroup(prefix, "%dMHz Band" % band)
+        bf = RadioSettingGroup(prefix, "%d MHz Band" % band)
         freq = RadioSettingValueString(0, 15, int2freq(c.freq * 10))
         rs = RadioSetting(prefix + ".freq", "Rx Frequency", freq)
         rs.set_apply_callback(apply_freq, lo, hi, c)
@@ -2784,28 +2782,28 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
                                            (l.lim_150M_Txlower_limit) / 10.0)
             rs = RadioSetting("limits.lim_150M_Txlower_limit",
                               "150M Tx Lower Limit (MHz)",
-                              RadioSettingValueInteger(136, 180, val))
+                              val)
             limgrp.append(rs)
 
             val = RadioSettingValueInteger(136, 180,
                                            (l.lim_150M_Txupper_limit) / 10.0)
             rs = RadioSetting("limits.lim_150M_Txupper_limit",
                               "150M Tx Upper Limit (MHz + 0.9975)",
-                              RadioSettingValueInteger(136, 180, val))
+                              val)
             limgrp.append(rs)
 
             val = RadioSettingValueInteger(400, 512,
                                            (l.lim_450M_Txlower_limit) / 10.0)
             rs = RadioSetting("limits.lim_450M_Txlower_limit",
                               "450M Tx Lower Limit (MHz)",
-                              RadioSettingValueInteger(400, 512, val))
+                              val)
             limgrp.append(rs)
 
             val = RadioSettingValueInteger(400, 512,
                                            (l.lim_450M_Txupper_limit) / 10.0)
             rs = RadioSetting("limits.lim_450M_Txupper_limit",
                               "450M Tx Upper Limit (MHz + 0.9975)",
-                              RadioSettingValueInteger(400, 512, val))
+                              val)
             limgrp.append(rs)
 
         val = RadioSettingValueInteger(108, 180,
@@ -2813,8 +2811,7 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
                                        10.0)
         rs = RadioSetting("limits.lim_150M_area_a_rxlower_limit",
                           "Rcvr A 150M Rx Lower Limit (MHz)",
-                          RadioSettingValueInteger(108, 180,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(108, 180,
@@ -2822,8 +2819,7 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
                                        10.0)
         rs = RadioSetting("limits.lim_150M_area_a_rxupper_limit",
                           "Rcvr A 150M Rx Upper Limit (MHz + 0.9975)",
-                          RadioSettingValueInteger(108, 180,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(136, 180,
@@ -2831,8 +2827,7 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
                                        10.0)
         rs = RadioSetting("limits.lim_150M_area_b_rxlower_limit",
                           "Rcvr B 150M Rx Lower Limit (MHz)",
-                          RadioSettingValueInteger(136, 180,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(136, 180,
@@ -2840,71 +2835,62 @@ class KGUV9PXRadio(KGUV9DPlusRadio):
                                        10.0)
         rs = RadioSetting("limits.lim_150M_area_b_rxupper_limit",
                           "Rcvr B 150M Rx Upper Limit (MHz + 0.9975)",
-                          RadioSettingValueInteger(136, 180,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(400, 512,
                                        (l.lim_450M_rxlower_limit) / 10.0)
         rs = RadioSetting("limits.lim_450M_rxlower_limit",
                           "450M Rx Lower Limit (MHz)",
-                          RadioSettingValueInteger(400, 512,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(400, 512,
                                        (l.lim_450M_rxupper_limit) / 10.0)
         rs = RadioSetting("limits.lim_450M_rxupper_limit",
                           "450M Rx Upper Limit (MHz + 0.9975)",
-                          RadioSettingValueInteger(400, 512,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(350, 399,
                                        (l.lim_300M_rxlower_limit) / 10.0)
         rs = RadioSetting("limits.lim_300M_rxlower_limit",
                           "300M Rx Lower Limit (MHz)",
-                          RadioSettingValueInteger(350, 399,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(350, 399,
                                        (l.lim_300M_rxupper_limit) / 10.0)
         rs = RadioSetting("limits.lim_300M_rxupper_limit",
                           "300M Rx Upper Limit (MHz + 0.9975)",
-                          RadioSettingValueInteger(350, 399,
-                                                   val))
+                          val)
         limgrp.append(rs)
         val = RadioSettingValueInteger(700, 986,
                                        (l.lim_800M_rxlower_limit) / 10.0)
         rs = RadioSetting("limits.lim_800M_rxlower_limit",
                           "800M Rx Lower Limit (MHz)",
-                          RadioSettingValueInteger(700, 986,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(700, 986,
                                        (l.lim_800M_rxupper_limit) / 10.0)
         rs = RadioSetting("limits.lim_800M_rxupper_limit",
                           "800M Rx Upper Limit (MHz + 0.9975)",
-                          RadioSettingValueInteger(700, 986,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(219, 250,
                                        (l.lim_210M_rxlower_limit) / 10.0)
         rs = RadioSetting("limits.lim_210M_rxlower_limit",
                           "210M Rx Lower Limit (MHz)",
-                          RadioSettingValueInteger(219, 250,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         val = RadioSettingValueInteger(219, 250,
                                        (l.lim_210M_rxupper_limit) / 10.0)
         rs = RadioSetting("limits.lim_210M_rxupper_limit",
                           "210M Rx Upper Limit (MHz + 0.9975)",
-                          RadioSettingValueInteger(219, 250,
-                                                   val))
+                          val)
         limgrp.append(rs)
 
         return limgrp
@@ -2918,7 +2904,6 @@ class KGUV9GXRadio(KGUV9PXRadio):
     MODEL = "KG-UV9GX"
     _model = b"KG-UV9D"
     _rev = b"02"  # default rev for the radio I know about...
-    NEEDS_COMPAT_SERIAL = False
     _valid_steps = STEPS
     _step_list = STEP_LIST
 
@@ -2937,7 +2922,6 @@ class KGUV9KRadio(KGUV9DPlusRadio):
     _model = b"KG-UV9D"
     _file_ident = b"kg-uv9k"
     _rev = b"02"  # default rev for the radio I know about...
-    NEEDS_COMPAT_SERIAL = False
     _step_list = STEP_LIST_9K
     _valid_steps = STEPS_9K
 
@@ -2956,7 +2940,6 @@ class KGUV9GProRadio(KGUV9DPlusRadio):
     _model = b"KG-UV9D"
     _file_ident = b"kg-uv9gpro"
     _rev = b"02"  # default rev for the radio I know about...
-    NEEDS_COMPAT_SERIAL = False
     _step_list = STEP_LIST
     _valid_steps = STEPS
 

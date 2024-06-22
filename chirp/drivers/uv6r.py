@@ -16,7 +16,7 @@
 
 import logging
 
-from chirp.drivers import baofeng_common
+from chirp.drivers import baofeng_common as bfc
 from chirp import chirp_common, directory
 from chirp import bitwise
 from chirp.settings import RadioSettingGroup, RadioSetting, \
@@ -89,11 +89,10 @@ def model_match(cls, data):
 
 
 @directory.register
-class UV6R(baofeng_common.BaofengCommonHT):
+class UV6R(bfc.BaofengCommonHT):
     """Baofeng UV-6R"""
     VENDOR = "Baofeng"
     MODEL = "UV-6R"
-    NEEDS_COMPAT_SERIAL = False
 
     _fileid = [UV6R_fp2, UV6R_fp1, ]
 
@@ -124,7 +123,7 @@ class UV6R(baofeng_common.BaofengCommonHT):
     SCODE_LIST = LIST_SCODE
 
     MEM_FORMAT = """
-    #seekto 0x0000;
+    // #seekto 0x0000;
     struct {
       lbcd rxfreq[4];
       lbcd txfreq[4];
@@ -221,9 +220,7 @@ class UV6R(baofeng_common.BaofengCommonHT):
          ponmsg:1;
       u8 unused26:7,
          roger:1;
-      u8 unused27:7,
-         reset:1;
-      u8 unknown08;
+      u8 unknown08[2];
       u8 displayab:1,
          unknown09:2,
          fmradio:1,
@@ -315,7 +312,7 @@ class UV6R(baofeng_common.BaofengCommonHT):
       char line2[8];
     } sixpoweron_msg;
 
-    #seekto 0x1FE0;
+    // #seekto 0x1FE0;
     struct {
       char line1[7];
       char line2[7];
@@ -646,12 +643,6 @@ class UV6R(baofeng_common.BaofengCommonHT):
                                                    _mem.wmchannel.mrchb))
         work.append(rs)
 
-        def convert_bytes_to_freq(bytes):
-            real_freq = 0
-            for byte in bytes:
-                real_freq = (real_freq * 10) + byte
-            return chirp_common.format_freq(real_freq * 10)
-
         def my_validate(value):
             _vhf_lower = int(_mem.limits.vhf.lower)
             _vhf_upper = int(_mem.limits.vhf.upper)
@@ -676,14 +667,14 @@ class UV6R(baofeng_common.BaofengCommonHT):
                 value /= 10
 
         val1a = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.a.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.a.freq))
         val1a.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.a.freq", "VFO A Frequency", val1a)
         rs.set_apply_callback(apply_freq, _mem.vfo.a)
         work.append(rs)
 
         val1b = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.b.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.b.freq))
         val1b.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.b.freq", "VFO B Frequency", val1b)
         rs.set_apply_callback(apply_freq, _mem.vfo.b)
@@ -853,7 +844,7 @@ class UV6R(baofeng_common.BaofengCommonHT):
         match_model = False
 
         # testing the file data size
-        if len(filedata) == 0x2008 or 0x2010:
+        if len(filedata) in (0x2008, 0x2010):
             match_size = True
 
         # testing the firmware model fingerprint

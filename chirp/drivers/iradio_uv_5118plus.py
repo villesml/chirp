@@ -26,33 +26,7 @@ from chirp.settings import RadioSetting, RadioSettingGroup, \
 LOG = logging.getLogger(__name__)
 
 MEM_FORMAT = """
-struct memory {
-  ul32 rxfreq;      // RX Frequency          00-03
-  ul16 rx_tone;     // PL/DPL Decode         04-05
-  ul32 txfreq;      // TX Frequency          06-09
-  ul16 tx_tone;     // PL/DPL Encode         0a-0b
-  ul24 mutecode;    // Mute Code             0c-0e
-  u8 unknown_0:2,   //                       0f
-     mutetype:2,    // Mute Type
-     unknown_1:4;   //
-  u8 isnarrow:1,    // Bandwidth             00
-     lowpower:1,    // Power
-     scan:1,        // Scan Add
-     bcl:2,         // Busy Lock
-     is_airband:1,  // Air Band (AM)
-     unknown_3:1,   //
-     unknown_4:1;   //
-  u8 unknown_5;     //                       01
-  u8 unused_0:4,    //                       02
-     scno:4;        // SC No.
-  u8 unknown_6[3];  //                       03-05
-  char name[10];    //                       06-0f
-};
-
-#seekto 0x1000;
-struct memory channels[999];
-
-#seekto 0x0000;
+// #seekto 0x0000;
 struct {
   char startuplabel[32];  // Startup Label         0000-001f
   char personalid[16];    // Personal ID           0020-002f
@@ -118,6 +92,32 @@ struct {
   ul16 quickch3;          // Quick CH 3            0076-0077
 } settings;
 
+struct memory {
+  ul32 rxfreq;      // RX Frequency          00-03
+  ul16 rx_tone;     // PL/DPL Decode         04-05
+  ul32 txfreq;      // TX Frequency          06-09
+  ul16 tx_tone;     // PL/DPL Encode         0a-0b
+  ul24 mutecode;    // Mute Code             0c-0e
+  u8 unknown_0:2,   //                       0f
+     mutetype:2,    // Mute Type
+     unknown_1:4;   //
+  u8 isnarrow:1,    // Bandwidth             00
+     lowpower:1,    // Power
+     scan:1,        // Scan Add
+     bcl:2,         // Busy Lock
+     is_airband:1,  // Air Band (AM)
+     unknown_3:1,   //
+     unknown_4:1;   //
+  u8 unknown_5;     //                       01
+  u8 unused_0:4,    //                       02
+     scno:4;        // SC No.
+  u8 unknown_6[3];  //                       03-05
+  char name[10];    //                       06-0f
+};
+
+#seekto 0x1000;
+struct memory channels[999];
+
 #seekto 0x8D20;
 struct {
   u8 senddelay;           // Send Delay            8d20
@@ -139,7 +139,7 @@ struct {
   u8 code_len;            // DTMF code length
 } dtmfcode[16];
 
-#seekto 0x8E30;
+// #seekto 0x8E30;
 struct {
   char kill[14];          // Remotely Kill         8e30-8e3d
   u8 unknown_0;           //                       8e3e
@@ -357,7 +357,6 @@ class IradioUV5118plus(chirp_common.CloneModeRadio):
     MODEL = "UV-5118plus"
     NAME_LENGTH = 10
     BAUD_RATE = 115200
-    NEEDS_COMPAT_SERIAL = False
 
     BLOCK_SIZE = 0x80
     magic = b"58" + b"\x05\x10\x82"
@@ -406,7 +405,7 @@ class IradioUV5118plus(chirp_common.CloneModeRadio):
                                 "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
         rf.valid_power_levels = self.POWER_LEVELS
         rf.valid_duplexes = ["", "-", "+", "split"]
-        rf.valid_modes = ["FM", "NFM"]  # 25 KHz, 12.5 KHz.
+        rf.valid_modes = ["FM", "NFM"]  # 25 kHz, 12.5 kHz.
         rf.valid_dtcs_codes = DTCS_CODES
         rf.memory_bounds = (1, self._upper)
         rf.valid_tuning_steps = _STEP_LIST
@@ -493,12 +492,12 @@ class IradioUV5118plus(chirp_common.CloneModeRadio):
 
         mem.freq = int(_mem.rxfreq) * 10
 
-        # We'll consider any blank (i.e. 0MHz frequency) to be empty
+        # We'll consider any blank (i.e. 0 MHz frequency) to be empty
         if mem.freq == 0:
             mem.empty = True
             return mem
 
-        if _mem.rxfreq.get_raw() == "\xFF\xFF\xFF\xFF":
+        if _mem.rxfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             mem.freq = 0
             mem.empty = True
             return mem
@@ -550,11 +549,13 @@ class IradioUV5118plus(chirp_common.CloneModeRadio):
         mem.extra.append(rset)
 
         rs = RadioSettingValueInteger(0, 16777215, _mem.mutecode)
-        rset = RadioSetting("mutecode", "Mute Code (0-16777215)", rs)
+        rset = RadioSetting("mutecode", "Mute Code", rs)
+        rset.set_doc('Value between 0-16777215')
         mem.extra.append(rset)
 
         rs = RadioSettingValueInteger(0, 8, _mem.scno)
-        rset = RadioSetting("scno", "SC No. (0-8)", rs)
+        rset = RadioSetting("scno", "SC No.", rs)
+        rset.set_doc('Value between 0-8')
         mem.extra.append(rset)
 
         return mem

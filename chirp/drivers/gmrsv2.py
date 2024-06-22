@@ -16,7 +16,7 @@
 
 import logging
 
-from chirp.drivers import baofeng_common
+from chirp.drivers import baofeng_common as bfc
 from chirp import chirp_common, directory
 from chirp import bitwise
 from chirp import bandplan_na
@@ -73,11 +73,10 @@ LIST_VOICE = ["Off", "English", "Chinese"]
 LIST_WORKMODE = ["Frequency", "Channel"]
 
 
-class GMRSV2base(baofeng_common.BaofengCommonHT):
+class GMRSV2base(bfc.BaofengCommonHT):
     """BTech GMRS-V2base"""
     VENDOR = ""
     MODEL = ""
-    NEEDS_COMPAT_SERIAL = False
 
     _fw_ver_start = 0x1EF0
     _recv_block_size = 0x40
@@ -143,7 +142,7 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
         return rf
 
     MEM_FORMAT = """
-    #seekto 0x0000;
+    // #seekto 0x0000;
     struct {
       lbcd rxfreq[4];
       lbcd txfreq[4];
@@ -168,7 +167,7 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
       u8 unused[11];
     } pttid[15];
 
-    #seekto 0x0DF0;
+    // #seekto 0x0DF0;
     struct {
       u8 dtmfon;
       u8 dtmfoff;
@@ -252,14 +251,14 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
       u8 keylock;
       u8 cht;
       u8 unused40[5];
-      u8 unknown1:3,
+      u8 unknown3:3,
          fmradio:1,
          alarm:1,
          unknown2:1,
          reset:1,
          menu:1;
       u8 unused41;
-      u8 unknown:7,
+      u8 unknown4:7,
          workmode:1;
     } settings;
 
@@ -286,7 +285,7 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
          sftd:2,
          unused5:4;
       u8 unknown4;
-      u8 unused3:1
+      u8 unused3:1,
          step:3,
          unused4:4;
       u8 txpower:1,
@@ -385,7 +384,7 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
         mem = chirp_common.Memory()
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xff":
+        if _mem.get_raw()[:1] == b"\xff":
             mem.empty = True
             return mem
 
@@ -505,7 +504,7 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
                     mem.power = self.POWER_LEVELS[1]
                     immutable = ["duplex", "offset", "mode", "power"]
                 elif mem.freq in bandplan_na.GMRS_HIRPT:
-                    # GMRS repeater channels, always either simplex or +5MHz
+                    # GMRS repeater channels, always either simplex or +5 MHz
                     if mem.duplex == '':
                         mem.offset = 0
                     if mem.duplex == '+':
@@ -902,12 +901,6 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
                                                    _mem.wmchannel.mrchb))
         work.append(rs)
 
-        def convert_bytes_to_freq(bytes):
-            real_freq = 0
-            for byte in bytes:
-                real_freq = (real_freq * 10) + byte
-            return chirp_common.format_freq(real_freq * 10)
-
         def my_validate(value):
             value = chirp_common.parse_freq(value)
             msg = ("Can't be less than %i.0000")
@@ -928,14 +921,14 @@ class GMRSV2base(baofeng_common.BaofengCommonHT):
                 value /= 10
 
         val1a = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.a.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.a.freq))
         val1a.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.a.freq", "VFO A Frequency", val1a)
         rs.set_apply_callback(apply_freq, _mem.vfo.a)
         work.append(rs)
 
         val1b = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.b.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.b.freq))
         val1b.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.b.freq", "VFO B Frequency", val1b)
         rs.set_apply_callback(apply_freq, _mem.vfo.b)
@@ -1061,7 +1054,6 @@ class GMRSV2(GMRSV2base):
     """BTech GMRS-V2"""
     VENDOR = "BTECH"
     MODEL = "GMRS-V2"
-    NEEDS_COMPAT_SERIAL = False
 
     _fileid = [GMRSV2_fp1, ]
 
@@ -1075,7 +1067,7 @@ class GMRSV2(GMRSV2base):
         msgs = super().validate_memory(mem)
 
         _msg_duplex = 'Duplex must be "off" for this frequency'
-        _msg_offset = 'Only simplex or +5MHz offset allowed on GMRS'
+        _msg_offset = 'Only simplex or +5 MHz offset allowed on GMRS'
 
         if mem.freq not in bandplan_na.ALL_GMRS_FREQS:
             if mem.duplex != "off":
@@ -1105,11 +1097,8 @@ class MURSV2(GMRSV2base):
         msgs = super().validate_memory(mem)
 
         _msg_duplex = 'Duplex must be "off" for this frequency'
-        _msg_offset = 'Only simplex or +5MHz offset allowed on GMRS'
+        _msg_offset = 'Only simplex or +5 MHz offset allowed on GMRS'
 
-        print('frequency')
-        print(mem.freq)
-        print(mem.freq in bandplan_na.ALL_MURS_FREQS)
         if mem.freq not in bandplan_na.ALL_MURS_FREQS:
             if mem.duplex != "off":
                 msgs.append(chirp_common.ValidationWarning(_msg_duplex))

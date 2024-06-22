@@ -338,7 +338,7 @@ struct {
   u8 unknown_7[2];     //                        005E-005F
   u8 channel_7[13];    //                        0060-006C
   u8 voicel:4,         // Voice Level            006D
-     unknown_9:3       //
+     unknown_9:3,      //
      warn:1;           // Warn Mode
 } settings;
 
@@ -747,7 +747,6 @@ class RT21Radio(chirp_common.CloneModeRadio):
     VENDOR = "Retevis"
     MODEL = "RT21"
     BAUD_RATE = 9600
-    NEEDS_COMPAT_SERIAL = False
     BLOCK_SIZE = 0x10
     BLOCK_SIZE_UP = 0x10
 
@@ -794,7 +793,7 @@ class RT21Radio(chirp_common.CloneModeRadio):
                                 "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
         rf.valid_power_levels = self.POWER_LEVELS
         rf.valid_duplexes = ["", "-", "+", "split", "off"]
-        rf.valid_modes = ["FM", "NFM"]  # 25 KHz, 12.5 kHz.
+        rf.valid_modes = ["FM", "NFM"]  # 25 kHz, 12.5 kHz.
         rf.valid_dtcs_codes = self.DTCS_CODES
         rf.memory_bounds = (1, self._upper)
         rf.valid_tuning_steps = [2.5, 5., 6.25, 10., 12.5, 25.]
@@ -901,16 +900,16 @@ class RT21Radio(chirp_common.CloneModeRadio):
             _mem = self._memobj.memory[number - 1]
 
         if self._reserved:
-            _rsvd = _mem.reserved.get_raw()
+            _rsvd = _mem.reserved.get_raw(asbytes=False)
 
         mem.freq = int(_mem.rxfreq) * 10
 
-        # We'll consider any blank (i.e. 0MHz frequency) to be empty
+        # We'll consider any blank (i.e. 0 MHz frequency) to be empty
         if mem.freq == 0:
             mem.empty = True
             return mem
 
-        if _mem.rxfreq.get_raw() == "\xFF\xFF\xFF\xFF":
+        if _mem.rxfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             mem.freq = 0
             mem.empty = True
             return mem
@@ -918,6 +917,8 @@ class RT21Radio(chirp_common.CloneModeRadio):
         if int(_mem.rxfreq) == int(_mem.txfreq):
             mem.duplex = ""
             mem.offset = 0
+        elif _mem.txfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
+            mem.duplex = "off"
         else:
             mem.duplex = int(_mem.rxfreq) > int(_mem.txfreq) and "-" or "+"
             mem.offset = abs(int(_mem.rxfreq) - int(_mem.txfreq)) * 10
@@ -1176,7 +1177,7 @@ class RT21Radio(chirp_common.CloneModeRadio):
             _mem = self._memobj.memory[mem.number - 1]
 
         if self._reserved:
-            _rsvd = _mem.reserved.get_raw()
+            _rsvd = _mem.reserved.get_raw(asbytes=False)
 
         if self.MODEL == "RT86":
             _freqhops = self._memobj.freqhops[mem.number - 1]
@@ -1214,8 +1215,7 @@ class RT21Radio(chirp_common.CloneModeRadio):
         _mem.rxfreq = mem.freq / 10
 
         if mem.duplex == "off":
-            for i in range(0, 4):
-                _mem.txfreq[i].set_raw("\xFF")
+            _mem.txfreq.fill_raw(b"\xFF")
         elif mem.duplex == "split":
             _mem.txfreq = mem.offset / 10
         elif mem.duplex == "+":

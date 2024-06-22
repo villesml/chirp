@@ -41,6 +41,18 @@ struct {
        bcl:1;
     u8 unknown3[3];
 } memory[%d];
+#seekto 0x02B0;
+struct {
+    u8 voicesw;      // Voice SW            +
+    u8 voiceselect;  // Voice Select
+    u8 scan;         // Scan                +
+    u8 vox;          // VOX                 +
+    u8 voxgain;      // Vox Gain            +
+    u8 voxnotxonrx;  // Rx Disable Vox      +
+    u8 hivoltnotx;   // High Vol Inhibit TX +
+    u8 lovoltnotx;   // Low Vol Inhibit TX  +
+    u8 rxemergency;  // RX Emergency
+} settings2;
 #seekto 0x03C0;
 struct {
     u8 codesw:1,         // Retevis RB29 code switch
@@ -70,19 +82,6 @@ struct {
        power10w:1;       // Retevis RT85 power 10w on/off
                          // Retevis RT75 stop TX with low voltage
 } settings;
-
-#seekto 0x02B0;
-struct {
-    u8 voicesw;      // Voice SW            +
-    u8 voiceselect;  // Voice Select
-    u8 scan;         // Scan                +
-    u8 vox;          // VOX                 +
-    u8 voxgain;      // Vox Gain            +
-    u8 voxnotxonrx;  // Rx Disable Vox      +
-    u8 hivoltnotx;   // High Vol Inhibit TX +
-    u8 lovoltnotx;   // Low Vol Inhibit TX  +
-    u8 rxemergency;  // RX Emergency
-} settings2;
 """
 
 MEM_FORMAT_RB18 = """
@@ -132,11 +131,51 @@ struct {
 } settings;
 """
 
+MEM_FORMAT_T20FRS = """
+// #seekto 0x0000;
+struct {
+    lbcd rxfreq[4];
+    lbcd txfreq[4];
+    lbcd rxtone[2];
+    lbcd txtone[2];
+    u8 jumpcode:1,
+       unknown1:2,
+       skip:1,
+       highpower:1,
+       narrow:1,
+       unknown2:1,
+       bcl:1;
+    u8 unknown3[3];
+} memory[%d];
+#seekto 0x02B0;
+struct {
+    u8 voicesw;      // Voice SW            +
+    u8 voiceselect;  // Voice Select
+    u8 scan;         // Scan                +
+    u8 vox;          // VOX                 +
+    u8 voxgain;      // Vox Gain            +
+    u8 voxnotxonrx;  // Rx Disable Vox      +
+    u8 hivoltnotx;   // High Vol Inhibit TX +
+    u8 lovoltnotx;   // Low Vol Inhibit TX  +
+    u8 rxemergency;  // RX Emergency
+} settings2;
+#seekto 0x02C0;
+struct {
+    u8 unk:6,
+       batterysaver:1,
+       beep:1;
+    u8 squelchlevel;
+    u8 sidekey2;
+    u8 timeouttimer;
+} settings;
+"""
+
 CMD_ACK = b"\x06"
 
 VOICE_LIST = ["Off", "Chinese", "English"]
 VOICE_LIST2 = ["English", "Chinese"]
 VOICE_LIST3 = ["Off", "English", "Chinese"]
+VOICE_LIST4 = ["Chinese", "English"]
 TIMEOUTTIMER_LIST = ["Off", "30 seconds", "60 seconds", "90 seconds",
                      "120 seconds", "150 seconds", "180 seconds",
                      "210 seconds", "240 seconds", "270 seconds",
@@ -382,7 +421,6 @@ class T18Radio(chirp_common.CloneModeRadio):
     VENDOR = "Radtel"
     MODEL = "T18"
     BAUD_RATE = 9600
-    NEEDS_COMPAT_SERIAL = False
     BLOCK_SIZE = 0x08
     CMD_EXIT = b"b"
     ACK_BLOCK = True
@@ -405,7 +443,7 @@ class T18Radio(chirp_common.CloneModeRadio):
     def get_features(self):
         rf = chirp_common.RadioFeatures()
         rf.has_settings = True
-        rf.valid_modes = ["NFM", "FM"]  # 12.5 KHz, 25 kHz.
+        rf.valid_modes = ["NFM", "FM"]  # 12.5 kHz, 25 kHz.
         rf.valid_skips = ["", "S"]
         rf.valid_tmodes = ["", "Tone", "TSQL", "DTCS", "Cross"]
         rf.valid_duplexes = ["", "-", "+", "split", "off"]
@@ -479,17 +517,17 @@ class T18Radio(chirp_common.CloneModeRadio):
         mem.number = number
         mem.freq = int(_mem.rxfreq) * 10
 
-        # We'll consider any blank (i.e. 0MHz frequency) to be empty
+        # We'll consider any blank (i.e. 0 MHz frequency) to be empty
         if mem.freq == 0:
             mem.empty = True
             return mem
 
-        if _mem.rxfreq.get_raw() == "\xFF\xFF\xFF\xFF":
+        if _mem.rxfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             mem.freq = 0
             mem.empty = True
             return mem
 
-        if _mem.txfreq.get_raw() == "\xFF\xFF\xFF\xFF":
+        if _mem.txfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             mem.duplex = "off"
             mem.offset = 0
         elif int(_mem.rxfreq) == int(_mem.txfreq):
@@ -516,7 +554,8 @@ class T18Radio(chirp_common.CloneModeRadio):
         mem.extra.append(rs)
         if self.MODEL != "RB18" and self.MODEL != "RB618" and \
                 self.MODEL != "FRS-B1" and self.MODEL != "BF-V8A" and \
-                self.MODEL != "RB29" and self.MODEL != "RB629":
+                self.MODEL != "RB29" and self.MODEL != "RB629" and \
+                self.MODEL != "BF-T20FRS":
             if self.MODEL not in ["RB87",
                                   "RT47V"]:
                 rs = RadioSetting("scramble", "Scramble",
@@ -623,8 +662,10 @@ class T18Radio(chirp_common.CloneModeRadio):
 
             return
 
-        if self.MODEL == "BF-V8A":
+        if self.MODEL == "BF-V8A" or self.MODEL == "BF-T20FRS":
             _mem.set_raw("\x00" * 12 + "\x09\xFF\xFF\xFF")
+        elif self.MODEL == "RB29" or self.MODEL == "RB629":
+            _mem.set_raw("\x00" * 12 + "\xF7\xFF\xFF\xFF")
         else:
             _mem.set_raw("\x00" * 12 + "\xF9\xFF\xFF\xFF")
 
@@ -658,7 +699,8 @@ class T18Radio(chirp_common.CloneModeRadio):
 
     def get_settings(self):
         _settings = self._memobj.settings
-        if self.MODEL == "FRS-B1" or self.MODEL == "BF-V8A":
+        if self.MODEL == "FRS-B1" or self.MODEL == "BF-V8A" or \
+                self.MODEL == "BF-T20FRS":
             _settings2 = self._memobj.settings2
         basic = RadioSettingGroup("basic", "Basic Settings")
         top = RadioSettings(basic)
@@ -679,7 +721,8 @@ class T18Radio(chirp_common.CloneModeRadio):
             rs = RadioSetting("scan", "Scan",
                               RadioSettingValueBoolean(_settings.scan))
             basic.append(rs)
-        elif self.MODEL == "FRS-B1" or self.MODEL == "BF-V8A":
+        elif self.MODEL == "FRS-B1" or self.MODEL == "BF-V8A" or \
+                self.MODEL == "BF-T20FRS":
             rs = RadioSetting("settings2.scan", "Scan",
                               RadioSettingValueBoolean(_settings2.scan))
             basic.append(rs)
@@ -690,7 +733,13 @@ class T18Radio(chirp_common.CloneModeRadio):
                                   SCANMODE_LIST[_settings.scanmode]))
             basic.append(rs)
 
-        if self.MODEL == "RT22S":
+        if self.MODEL == "RT20":
+            rs = RadioSetting("voiceprompt", "Voice prompts",
+                              RadioSettingValueList(
+                                  VOICE_LIST4,
+                                  VOICE_LIST4[_settings.voiceprompt]))
+            basic.append(rs)
+        elif self.MODEL == "RT22S":
             rs = RadioSetting("voiceprompt", "Voice prompts",
                               RadioSettingValueBoolean(_settings.voiceprompt))
             basic.append(rs)
@@ -698,7 +747,8 @@ class T18Radio(chirp_common.CloneModeRadio):
             rs = RadioSetting("voice", "Voice prompts",
                               RadioSettingValueBoolean(_settings.voice))
             basic.append(rs)
-        elif self.MODEL == "FRS-B1" or self.MODEL == "BF-V8A":
+        elif self.MODEL == "FRS-B1" or self.MODEL == "BF-V8A" or \
+                self.MODEL == "BF-T20FRS":
             rs = RadioSetting("settings2.voicesw", "Voice prompts",
                               RadioSettingValueBoolean(_settings2.voicesw))
             basic.append(rs)
@@ -743,7 +793,8 @@ class T18Radio(chirp_common.CloneModeRadio):
 
         if self.MODEL != "RB18" and self.MODEL != "RB618" \
                 and self.MODEL != "FRS-B1" \
-                and self.MODEL != "BF-V8A":
+                and self.MODEL != "BF-V8A" \
+                and self.MODEL != "BF-T20FRS":
             rs = RadioSetting("voxlevel", "Vox level",
                               RadioSettingValueList(
                                   VOXLEVEL_LIST,
@@ -914,7 +965,7 @@ class T18Radio(chirp_common.CloneModeRadio):
                                   SIDEKEY47_LIST[_settings.sidekey2S]))
             basic.append(rs)
 
-        if self.MODEL == "BF-V8A":
+        if self.MODEL == "BF-V8A" or self.MODEL == "BF-T20FRS":
             rs = RadioSetting("sidekey2", "Side key",
                               RadioSettingValueList(
                                   SIDEKEYV8A_LIST,
@@ -1022,6 +1073,24 @@ class T18Radio(chirp_common.CloneModeRadio):
             # Radios that have always been post-metadata, so never do
             # old-school detection
             return False
+
+
+@directory.register
+class RT20Radio(T18Radio):
+    """RETEVIS RT20"""
+    VENDOR = "Retevis"
+    MODEL = "RT20"
+    ACK_BLOCK = True
+    BLOCK_SIZE = 0x08
+
+    POWER_LEVELS = [chirp_common.PowerLevel("High", watts=2.00),
+                    chirp_common.PowerLevel("Low",  watts=0.50)]
+
+    _magic = b"8AOGRAM"
+    _fingerprint = [b"SMP558" + b"\x02"]
+    _upper = 16
+    _mem_params = (_upper  # number of channels
+                   )
 
 
 @directory.register
@@ -1381,7 +1450,7 @@ class RT15Radio(T18Radio):
     _upper = 16
     _mem_params = (_upper  # number of channels
                    )
-    _frs16 = True
+    _frs16 = False  # sold as FRS radio but supports full band TX/RX
 
     @classmethod
     def match_model(cls, filedata, filename):
@@ -1408,3 +1477,31 @@ class RB87Radio(T18Radio):
     _mem_params = (_upper  # number of channels
                    )
     _gmrs = True
+
+
+@directory.register
+class BFT20FRSRadio(T18Radio):
+    """Baofeng BF-T20FRS"""
+    VENDOR = "Baofeng"
+    MODEL = "BF-T20FRS"
+    ACK_BLOCK = True
+
+    POWER_LEVELS = [chirp_common.PowerLevel("High", watts=2.000),
+                    chirp_common.PowerLevel("Low", watts=0.500)]
+
+    _magic = b"PROGRAM"
+    _fingerprint = [b"P3107" + b"\xF7\x00\x00"]
+    _upper = 22
+    _mem_params = (_upper  # number of channels
+                   )
+    _frs = False  # sold as FRS radio but supports full band TX/RX
+
+    _ranges = [
+        (0x0000, 0x0160),
+        (0x02B0, 0x02D0),
+    ]
+    _memsize = 0x03F0
+
+    def process_mmap(self):
+        self._memobj = bitwise.parse(MEM_FORMAT_T20FRS %
+                                     self._mem_params, self._mmap)

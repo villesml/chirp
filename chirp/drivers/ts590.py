@@ -561,6 +561,7 @@ class TS590Radio(chirp_common.CloneModeRadio):
     """Kenwood TS-590"""
     VENDOR = "Kenwood"
     MODEL = "TS-590SG_CloneMode"
+    NEEDS_COMPAT_SERIAL = True
     ID = "ID023;"
     SG = True
     # Settings read/write cmd sequence list
@@ -587,10 +588,10 @@ class TS590Radio(chirp_common.CloneModeRadio):
               11: " Auto Announcement",
               12: " MHz step",
               13: " Tuning control adj rate (Hz)",
-              16: " SSB tune step (KHz)",
-              17: " CW/FSK tune step (KHz)",
-              18: " AM tune step (KHz)",
-              19: " FM tune step (KHz)",
+              16: " SSB tune step (kHz)",
+              17: " CW/FSK tune step (kHz)",
+              18: " AM tune step (kHz)",
+              19: " FM tune step (kHz)",
               21: " Max number of Quick Mem chans",
               22: " Temporary MR Chan freq allowed",
               23: " Program Scan slowdown",
@@ -1278,7 +1279,7 @@ class TS590Radio(chirp_common.CloneModeRadio):
             rx = RadioSettingValueList(options, options[_mex[mx].ex016])
             sx = my_labels(16)
             if nsg:
-                sx = "014: Tuning step for SSB/CW/FSK (KHz)"
+                sx = "014: Tuning step for SSB/CW/FSK (kHz)"
             rset = RadioSetting("exset.ex016/%d" % mx, sx, rx)
             rset.set_apply_callback(my_val_list, options, _mex,
                                     "ex016", 0, mx)

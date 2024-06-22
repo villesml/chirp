@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""TYT uv3r (2.5kHz) radio management module"""
+"""TYT uv3r (2.5 kHz) radio management module"""
 
 from chirp import chirp_common, bitwise, directory
 from chirp.drivers.wouxun import do_download, do_upload
@@ -69,7 +69,6 @@ VOICE_MODE_LIST = ["Compander", "Scrambler", "None"]
 class TYTUV3R25Radio(TYTUV3RRadio):
     MODEL = "TH-UV3R-25"
     _memsize = 2864
-    NEEDS_COMPAT_SERIAL = False
 
     POWER_LEVELS = [chirp_common.PowerLevel("High", watts=2.00),
                     chirp_common.PowerLevel("Low", watts=0.80)]

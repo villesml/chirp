@@ -178,8 +178,8 @@ struct mem {
                           // BJ-318 band power overrides any
                           // individual channel power setting
       wide:1,
-      compander:1
-      scrambler:1
+      compander:1,
+      scrambler:1,
       unknown:4;
   u8  namelen;
   u8  name[7];
@@ -426,7 +426,6 @@ class LT725UV(chirp_common.CloneModeRadio):
     """LUITON LT-725UV Radio"""
     VENDOR = "LUITON"
     MODEL = "LT-725UV"
-    NEEDS_COMPAT_SERIAL = False
     MODES = ["NFM", "FM"]
     TONES = chirp_common.TONES
     DTCS_CODES = tuple(sorted(chirp_common.DTCS_CODES + (645,)))
@@ -595,7 +594,7 @@ class LT725UV(chirp_common.CloneModeRadio):
         mem = chirp_common.Memory()
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xff":
+        if _mem.get_raw(asbytes=False)[0] == "\xff":
             mem.empty = True
             return mem
 
@@ -1093,7 +1092,7 @@ class LT725UV(chirp_common.CloneModeRadio):
         a_band.append(rs)
 
         tmp = str(_vfoa.step / 100.0)
-        rs = RadioSetting("step", "Freq step (KHz)",
+        rs = RadioSetting("step", "Freq step (kHz)",
                           RadioSettingValueList(LIST_STEPS, tmp))
         rs.set_apply_callback(my_word2raw, _vfoa, "step", 100)
         a_band.append(rs)
@@ -1201,7 +1200,7 @@ class LT725UV(chirp_common.CloneModeRadio):
         b_band.append(rs)
 
         tmp = str(_vfob.step / 100.0)
-        rs = RadioSetting("step", "Freq step (KHz)",
+        rs = RadioSetting("step", "Freq step (kHz)",
                           RadioSettingValueList(LIST_STEPS, tmp))
         rs.set_apply_callback(my_word2raw, _vfob, "step", 100)
         b_band.append(rs)

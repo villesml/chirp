@@ -215,7 +215,7 @@ _MEM_FORMAT = """
                 power:1,
                 unknown2:1;
         u8      unknown3:1,
-                shift_dir:2
+                shift_dir:2,
                 unknown4:1,
                 compander:1,
                 mute_mode:2,
@@ -235,7 +235,7 @@ _MEM_FORMAT = """
                 power:1,
                 unknown2:1;
         u8      unknown3:1,
-                shift_dir:2
+                shift_dir:2,
                 unknown4:1,
                 compander:1,
                 mute_mode:2,
@@ -305,7 +305,6 @@ class KGUV8DPlusRadio(chirp_common.CloneModeRadio,
     BAUD_RATE = 19200
     POWER_LEVELS = [chirp_common.PowerLevel("L", watts=1),
                     chirp_common.PowerLevel("H", watts=5)]
-    NEEDS_COMPAT_SERIAL = False
     _mmap = ""
     _record_start = 0x7A
 
@@ -362,11 +361,11 @@ class KGUV8DPlusRadio(chirp_common.CloneModeRadio,
 # attempts return the correct checksum... (well it does on my radio!)
 #
 # The ID record returned by the radio also includes the current frequency range
-# as 4 bytes big-endian in 10Hz increments
+# as 4 bytes big-endian in 10 Hz increments
 #
 # Offset
 #  0:10     Model, zero padded (Use first 7 chars for 'KG-UV8D')
-#  11:14    UHF rx lower limit (in units of 10Hz)
+#  11:14    UHF rx lower limit (in units of 10 Hz)
 #  15:18    UHF rx upper limit
 #  19:22    UHF tx lower limit
 #  23:26    UHF tx upper limit

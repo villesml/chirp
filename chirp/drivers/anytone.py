@@ -192,7 +192,7 @@ class FlagObj(object):
 
 
 def _is_loc_used(memobj, loc):
-    return memobj.flags[loc / 2].get_raw() != "\xFF"
+    return memobj.flags[loc / 2].get_raw(asbytes=False) != "\xFF"
 
 
 def _addr_to_loc(addr):
@@ -349,7 +349,7 @@ def _upload(radio):
     _finish(radio)
 
 
-TONES = [62.5] + list(chirp_common.TONES)
+TONES = tuple(sorted([62.5] + list(chirp_common.TONES)))
 TMODES = ['', 'Tone', 'DTCS', '']
 DUPLEXES = ['', '-', '+', 'off']
 MODES = ["FM", "FM", "NFM"]
@@ -380,7 +380,6 @@ class AnyTone5888UVRadio(chirp_common.CloneModeRadio,
     MODEL = "5888UV"
     BAUD_RATE = 9600
     _file_ident = [b"QX588UV", b"588UVN"]
-    NEEDS_COMPAT_SERIAL = False
 
     # May try to mirror the OEM behavior later
     _ranges = [
@@ -408,6 +407,7 @@ class AnyTone5888UVRadio(chirp_common.CloneModeRadio,
         rf.valid_tmodes = ['', 'Tone', 'TSQL', 'DTCS', 'Cross']
         rf.valid_cross_modes = ['Tone->DTCS', 'DTCS->Tone',
                                 '->Tone', '->DTCS', 'Tone->Tone']
+        rf.valid_tones = TONES
         rf.valid_dtcs_codes = chirp_common.ALL_DTCS_CODES
         rf.valid_bands = [(108000000, 500000000)]
         rf.valid_characters = chirp_common.CHARSET_UPPER_NUMERIC + "-"

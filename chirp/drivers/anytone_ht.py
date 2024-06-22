@@ -369,7 +369,7 @@ BCLO = ['Off', 'Repeater', 'Busy']
 CHARSET = chirp_common.CHARSET_ASCII
 COLOR = ['Blue', 'Orange', 'Purple']
 DISPLAY = ['Frequency', 'N/A', 'Name']
-DUPLEXES = ['', 'N/A', '-', '+', 'split', 'off']
+DUPLEXES = ['', '', '-', '+', 'split', 'off']
 GMRS = ['GMRS %s' % x for x in range(1, 8)] + \
        ['GMRS %s' % x for x in range(15, 23)] + \
        ['GMRS Repeater %s' % x for x in range(15, 23)]
@@ -409,7 +409,6 @@ class AnyToneTERMN8RRadio(chirp_common.CloneModeRadio,
     VENDOR = "AnyTone"
     MODEL = "TERMN-8R"
     BAUD_RATE = 9600
-    NEEDS_COMPAT_SERIAL = False
     _file_ident = b"TERMN8R"
 
     # May try to mirror the OEM behavior later
@@ -438,6 +437,7 @@ class AnyToneTERMN8RRadio(chirp_common.CloneModeRadio,
         rf.valid_tmodes = ['', 'Tone', 'TSQL', 'DTCS', 'Cross']
         rf.valid_cross_modes = ["Tone->Tone", "Tone->DTCS", "DTCS->Tone",
                                 "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
+        rf.valid_tones = TONES
         rf.valid_dtcs_codes = chirp_common.ALL_DTCS_CODES
         rf.valid_bands = [(136000000, 174000000),
                           (400000000, 520000000)]
@@ -497,7 +497,7 @@ class AnyToneTERMN8RRadio(chirp_common.CloneModeRadio,
         mem.duplex = DUPLEXES[_mem.duplex]
         mem.mode = MODES[_mem.channel_width]
 
-        if _mem.tx_off is True:
+        if bool(_mem.tx_off):
             mem.duplex = "off"
             mem.offset = 0
 
@@ -556,7 +556,7 @@ class AnyToneTERMN8RRadio(chirp_common.CloneModeRadio,
             return
         _usd &= ~bitpos
 
-        if _mem.get_raw() == ("\xFF" * 32):
+        if _mem.get_raw(asbytes=False) == ("\xFF" * 32):
             LOG.debug("Initializing empty memory")
             _mem.set_raw("\x00" * 32)
             _mem.squelch = 3

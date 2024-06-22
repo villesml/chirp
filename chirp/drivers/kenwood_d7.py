@@ -238,7 +238,6 @@ class KenwoodD7ProgrammableVFOs(RadioSettingGroup):
 class KenwoodD7Family(chirp_common.LiveRadio):
     VENDOR = "Kenwood"
     MODEL = ""
-    NEEDS_COMPAT_SERIAL = False
     HARDWARE_FLOW = False
 
     _ARG_DELIMITER = " "
@@ -324,7 +323,7 @@ class KenwoodD7Family(chirp_common.LiveRadio):
                  'values': ("Off", "Mine", "All New", "All")},
         "CH": _BOOL,
         "CKEY": {'type': 'list',
-                 'values': ("Call", "1750Hz")},
+                 'values': ("Call", "1750 Hz")},
         "CNT": {'type': 'integer', 'min': 1, 'max': 16},
         "DL": _BOOL,
         "DS": {'type': 'list',
@@ -454,7 +453,7 @@ class KenwoodD7Family(chirp_common.LiveRadio):
                            "DGPS")}}
 
     _PROGRAMMABLE_VFOS = (
-        ("Band A, 118MHz Sub-Band", 1, 118, 135),
+        ("Band A, 118 MHz Sub-Band", 1, 118, 135),
         ("Band A, VHF Sub-Band", 2, 136, 173),
         ("Band B, VHF Sub-Band", 3, 144, 147),
         ("Band B, UHF Sub-Band", 6, 400, 479))
@@ -1985,7 +1984,9 @@ class THD7GRadio(KenwoodD7Family):
         "DSPA": {'type': 'list',
                  'values': ("Entire Display", "One Line")},
         "ICO": {'type': 'map',
-                'map': (KenwoodD7Family._COMMON_SETTINGS["ICO"]["map"] +
+                'map': (
+                    KenwoodD7Family.
+                        _COMMON_SETTINGS["ICO"]["map"] +  # type: ignore
                         _APRS_EXTRA)}}
 
     _SETTINGS_MENUS = (
@@ -2125,7 +2126,8 @@ class TMD700Radio(KenwoodD7Family):
         "FUNC": {'type': 'map',
                  'map': (("Mode 1", "1"), ("Mode 2", "2"), ("Mode 3", "3"))},
         "ICO": {'type': 'map',
-                'map': (KenwoodD7Family._COMMON_SETTINGS["ICO"]["map"] +
+                'map': (KenwoodD7Family.
+                        _COMMON_SETTINGS["ICO"]["map"] +  # type: ignore
                         (('Digipeater', '0,F'),) +
                         THD7GRadio._APRS_EXTRA)},
         "MCL 0": _BOOL,
@@ -2164,15 +2166,15 @@ class TMD700Radio(KenwoodD7Family):
                         ('91 Channels', '3'), ('181 Channels', '4'))}}
 
     _PROGRAMMABLE_VFOS = (
-        ("Band A 118MHz Sub-Band", 1, 118, 135),
+        ("Band A 118 MHz Sub-Band", 1, 118, 135),
         ("Band A VHF Sub-Band", 2, 136, 199),
         ("Band B VHF Sub-Band", 3, 136, 174),
-        ("Band A 220MHz Sub-Band", 4, 200, 299),
-        ("Band B 300MHz Sub-Band", 5, 300, 399),
-        ("Band A 300MHz Sub-Band", 6, 300, 399),
+        ("Band A 220 MHz Sub-Band", 4, 200, 299),
+        ("Band B 300 MHz Sub-Band", 5, 300, 399),
+        ("Band A 300 MHz Sub-Band", 6, 300, 399),
         ("Band B UHF Sub-Band", 7, 400, 523),
         ("Band A UHF Sub-Band", 8, 400, 469),
-        ("Band B 1.2GHz Sub-Band", 9, 800, 1299))
+        ("Band B 1.2 GHz Sub-Band", 9, 800, 1299))
 
     _SETTINGS_MENUS = (
         ('Main',

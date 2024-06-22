@@ -50,7 +50,7 @@ def uv3r_prep(radio):
     for _i in range(0, 10):
         try:
             return _uv3r_prep(radio)
-        except errors.RadioError:
+        except errors.RadioError as e:
             time.sleep(1)
 
     raise e
@@ -197,7 +197,6 @@ class UV3RRadio(chirp_common.CloneModeRadio):
     """Baofeng UV-3R"""
     VENDOR = "Baofeng"
     MODEL = "UV-3R"
-    NEEDS_COMPAT_SERIAL = False
 
     def get_features(self):
         rf = chirp_common.RadioFeatures()
@@ -235,7 +234,7 @@ class UV3RRadio(chirp_common.CloneModeRadio):
         mem = chirp_common.Memory()
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xff":
+        if _mem.get_raw(asbytes=False)[0] == "\xff":
             mem.empty = True
             return mem
 

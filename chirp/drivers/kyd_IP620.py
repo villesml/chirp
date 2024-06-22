@@ -36,12 +36,12 @@ struct {           // Channel memory structure
   lbcd tx_freq[4]; // TX frequency
   ul16 rx_tone;    // RX tone
   ul16 tx_tone;    // TX tone
-  u8 unknown_1:4   // n-a
-     busy_loc:2,   // NO-00, Crrier wave-01, SM-10
+  u8 unknown_1:4,  // n-a
+     busy_loc:2,   // NO-00, Carrier wave-01, SM-10
      n_a:2;        // n-a
-  u8 unknown_2:1   // n-a
+  u8 unknown_2:1,  // n-a
      scan_add:1,   // Scan add
-     n_a:1,        // n-a
+     n_a2:1,       // n-a
      w_n:1,        // Narrow-0 Wide-1
      lout:1,       // LOCKOUT OFF-0 ON-1
      n_a_:1,       // n-a
@@ -62,12 +62,12 @@ struct {           // Settings memory structure ( A-Frequency mode )
   lbcd freq_a_tx[4];
   ul16 freq_a_rx_tone;    // RX tone
   ul16 freq_a_tx_tone;    // TX tone
-  u8 unknown_1_5:4
+  u8 unknown_1_5:4,
   freq_a_busy_loc:2,
   n_a:2;
-  u8 unknown_1_6:3
+  u8 unknown_1_6:3,
   freq_a_w_n:1,
-  n_a:1,
+  n_a2:1,
   na:1,
   freq_a_power:2;
   u8 unknown_1_7;
@@ -77,7 +77,7 @@ struct {           // Settings memory structure ( A-Frequency mode )
 #seekto 0x0E20;
 struct {
   u8 chan_disp_way;  // Channel display way
-  u8 step_freq;      // Step frequency KHz
+  u8 step_freq;      // Step frequency kHz
   u8 rf_sql;         // Squelch level
   u8 bat_save;       // Battery Saver
   u8 chan_pri;       // Channel PRI
@@ -163,6 +163,7 @@ class IP620Radio(chirp_common.CloneModeRadio,
     VENDOR = "KYD"
     MODEL = "IP-620"
     BAUD_RATE = 9600
+    NEEDS_COMPAT_SERIAL = True
 
     _ranges = [
                (0x0000, 0x2000),
@@ -371,9 +372,8 @@ class IP620Radio(chirp_common.CloneModeRadio,
         _nam = self._memobj.chan_names[number - 1]
 
         def _is_empty():
-            for i in range(0, 4):
-                if _mem.rx_freq[i].get_raw() != "\xFF":
-                    return False
+            if _mem.rx_freq.get_raw() != b"\xFF\xFF\xFF\xFF":
+                return False
             return True
 
         mem = chirp_common.Memory()
@@ -388,6 +388,8 @@ class IP620Radio(chirp_common.CloneModeRadio,
         if int(_mem.rx_freq) == int(_mem.tx_freq):
             mem.duplex = ""
             mem.offset = 0
+        elif _mem.tx_freq.get_raw() == b"\xFF\xFF\xFF\xFF":
+            mem.duplex = "off"
         else:
             mem.duplex = int(_mem.rx_freq) > int(_mem.tx_freq) and "-" or "+"
             mem.offset = abs(int(_mem.rx_freq) - int(_mem.tx_freq)) * 10
@@ -468,13 +470,12 @@ class IP620Radio(chirp_common.CloneModeRadio,
     def set_memory(self, mem):
         _mem = self._memobj.memory[mem.number - 1]
         if mem.empty:
-            _mem.set_raw("\xFF" * (_mem.size() // 8))
+            _mem.fill_raw(b"\xFF")
             return
 
         _mem.rx_freq = mem.freq / 10
-        if mem.duplex == "OFF":
-            for i in range(0, 4):
-                _mem.tx_freq[i].set_raw("\xFF")
+        if mem.duplex == "off":
+            _mem.tx_freq.fill_raw(b"\xFF")
         elif mem.duplex == "+":
             _mem.tx_freq = (mem.freq + mem.offset) / 10
         elif mem.duplex == "-":
@@ -502,7 +503,7 @@ class IP620Radio(chirp_common.CloneModeRadio,
                                                 RFSQL_LIST[_settings.rf_sql]))
         basic.append(rs)
 
-        rs = RadioSetting("step_freq", "Step frequency KHz (STP)",
+        rs = RadioSetting("step_freq", "Step frequency kHz (STP)",
                           RadioSettingValueList(STEP_LIST,
                                                 STEP_LIST[_settings.step_freq]))
         basic.append(rs)

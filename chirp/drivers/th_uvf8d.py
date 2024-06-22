@@ -268,7 +268,6 @@ class TYTUVF8DRadio(chirp_common.CloneModeRadio):
     VENDOR = "TYT"
     MODEL = "TH-UVF8D"
     BAUD_RATE = 9600
-    NEEDS_COMPAT_SERIAL = False
 
     def get_features(self):
         rf = chirp_common.RadioFeatures()
@@ -367,7 +366,7 @@ class TYTUVF8DRadio(chirp_common.CloneModeRadio):
         else:
             mem.number = number
 
-        if _mem.get_raw().startswith("\xFF\xFF\xFF\xFF"):
+        if _mem.get_raw(asbytes=False).startswith("\xFF\xFF\xFF\xFF"):
             mem.empty = True
             return mem
 
@@ -447,7 +446,7 @@ class TYTUVF8DRadio(chirp_common.CloneModeRadio):
         else:
             e.flags[7 - ((mem.number - 1) % 8)] = True
 
-        if _mem.get_raw() == ("\xFF" * 32):
+        if _mem.get_raw(asbytes=False) == ("\xFF" * 32):
             LOG.debug("Initializing empty memory")
             _mem.set_raw("\x00" * 32)
 
@@ -621,12 +620,6 @@ class TYTUVF8DRadio(chirp_common.CloneModeRadio):
 
         return top
 
-        group.append(RadioSetting(
-                "disnm", "Display Name",
-                RadioSettingValueBoolean(_settings.disnm)))
-
-        return group
-
     def set_settings(self, settings):
         _settings = self._memobj.settings
 
@@ -638,7 +631,7 @@ class TYTUVF8DRadio(chirp_common.CloneModeRadio):
                     _settings.rxsave = 0
                 continue
             if element.get_name().endswith('_channel'):
-                LOG.debug(element.value, type(element.value))
+                LOG.debug('%s %s', element.value, type(element.value))
                 setattr(_settings, element.get_name(), int(element.value) - 1)
                 continue
             if not isinstance(element, RadioSetting):

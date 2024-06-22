@@ -79,7 +79,6 @@ class AlincoStyleRadio(chirp_common.CloneModeRadio):
     """Base class for all known Alinco radios"""
     _memsize = 0
     _model = b"NONE"
-    NEEDS_COMPAT_SERIAL = False
 
     def _send(self, data):
         LOG.debug("PC->R: (%2i)\n%s" % (len(data), util.hexprint(data)))
@@ -787,7 +786,7 @@ class AlincoDJG7(AlincoStyleRadio):
             if _mem.skip:
                 mem.skip = "S"
             # FIXME find out what every other byte is used for. Japanese?
-            mem.name = str(_mem.name.get_raw()[::2]).rstrip('\0')
+            mem.name = str(_mem.name.get_raw(asbytes=False)[::2]).rstrip('\0')
         return mem
 
     def set_memory(self, mem):

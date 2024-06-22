@@ -16,7 +16,7 @@
 
 import logging
 
-from chirp.drivers import baofeng_common
+from chirp.drivers import baofeng_common as bfc
 from chirp import chirp_common, directory
 from chirp import bitwise
 from chirp.settings import RadioSettingGroup, RadioSetting, \
@@ -89,11 +89,10 @@ def model_match(cls, data):
 
 
 @directory.register
-class GMRSV1(baofeng_common.BaofengCommonHT):
+class GMRSV1(bfc.BaofengCommonHT):
     """BTech GMRS-V1"""
     VENDOR = "BTECH"
     MODEL = "GMRS-V1"
-    NEEDS_COMPAT_SERIAL = False
 
     _fileid = [GMRSV1_fp4, GMRSV1_fp3, GMRSV1_fp2, GMRSV1_fp1, ]
     _is_orig = [GMRSV1_fp2, GMRSV1_fp1, GMRSV1_fp4, ]
@@ -165,7 +164,7 @@ class GMRSV1(baofeng_common.BaofengCommonHT):
         return rf
 
     MEM_FORMAT = """
-    #seekto 0x0000;
+    // #seekto 0x0000;
     struct {
       lbcd rxfreq[4];
       lbcd txfreq[4];
@@ -314,7 +313,7 @@ class GMRSV1(baofeng_common.BaofengCommonHT):
          sftd:2,
          scode:4;
       u8 unknown4;
-      u8 unused3:1
+      u8 unused3:1,
          step:3,
          unused4:4;
       u8 txpower:1,
@@ -413,13 +412,13 @@ class GMRSV1(baofeng_common.BaofengCommonHT):
         mem = chirp_common.Memory()
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xff":
+        if _mem.get_raw()[:1] == b"\xff":
             mem.empty = True
             return mem
 
         mem.freq = int(_mem.rxfreq) * 10
 
-        if _mem.txfreq.get_raw() == "\xFF\xFF\xFF\xFF":
+        if _mem.txfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
             mem.duplex = "off"
             mem.offset = 0
         elif int(_mem.rxfreq) == int(_mem.txfreq):
@@ -929,12 +928,6 @@ class GMRSV1(baofeng_common.BaofengCommonHT):
                                                    _mem.wmchannel.mrchb))
         work.append(rs)
 
-        def convert_bytes_to_freq(bytes):
-            real_freq = 0
-            for byte in bytes:
-                real_freq = (real_freq * 10) + byte
-            return chirp_common.format_freq(real_freq * 10)
-
         def my_validate(value):
             value = chirp_common.parse_freq(value)
             msg = ("Can't be less than %i.0000")
@@ -955,14 +948,14 @@ class GMRSV1(baofeng_common.BaofengCommonHT):
                 value /= 10
 
         val1a = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.a.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.a.freq))
         val1a.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.a.freq", "VFO A Frequency", val1a)
         rs.set_apply_callback(apply_freq, _mem.vfo.a)
         work.append(rs)
 
         val1b = RadioSettingValueString(0, 10,
-                                        convert_bytes_to_freq(_mem.vfo.b.freq))
+                                        bfc.bcd_decode_freq(_mem.vfo.b.freq))
         val1b.set_validate_callback(my_validate)
         rs = RadioSetting("vfo.b.freq", "VFO B Frequency", val1b)
         rs.set_apply_callback(apply_freq, _mem.vfo.b)

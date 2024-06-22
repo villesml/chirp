@@ -1034,7 +1034,6 @@ class KG935GRadio(chirp_common.CloneModeRadio,
     POWER_LEVELS = [chirp_common.PowerLevel("L", watts=0.5),
                     chirp_common.PowerLevel("M", watts=4.5),
                     chirp_common.PowerLevel("H", watts=5.5)]
-    NEEDS_COMPAT_SERIAL = False
     _record_start = 0x7C
 
     def _checksum(self, data):
@@ -1091,7 +1090,7 @@ class KG935GRadio(chirp_common.CloneModeRadio,
     #
     # The ID record returned by the radio also includes the
     # current frequency range
-    # as 4 bytes big-endian in 10Hz increments
+    # as 4 bytes big-endian in 10 Hz increments
     #
     # Offset
     #  0:10     Model, zero padded (Looks for 'KG-UV8D-B')
@@ -1312,9 +1311,6 @@ class KG935GRadio(chirp_common.CloneModeRadio,
         # always set it even if no dtcs is used
         mem.dtcs_polarity = "%s%s" % (tpol or "N", rpol or "N")
 
-        LOG.debug("Got TX %s (%i) RX %s (%i)" %
-                  (txmode, _mem.txtone, rxmode, _mem.rxtone))
-
     def get_memory(self, number):
         _mem = self._memobj.memory[number]
         _nam = self._memobj.names[number]
@@ -1322,7 +1318,6 @@ class KG935GRadio(chirp_common.CloneModeRadio,
         mem = chirp_common.Memory()
         mem.number = number
         _valid = self._memobj.valid[mem.number]
-        LOG.debug("%d %s", number, _valid == MEM_VALID)
         if _valid != MEM_VALID:
             mem.empty = True
             return mem
@@ -1542,9 +1537,8 @@ class KG935GRadio(chirp_common.CloneModeRadio,
 
         callchars = "0123456789"
         for i in range(1, 21):
-            callnum = str(i)
             _msg = ""
-            _msg1 = str(eval("_callname.call_name"+callnum)).split("\0")[0]
+            _msg1 = str(getattr(_callname, 'call_name%i' % i)).split('\0')[0]
             # MRT - Handle default factory values of 0xFF or
             # non-ascii values in Call Name memory
             for char in _msg1:
@@ -1554,8 +1548,8 @@ class KG935GRadio(chirp_common.CloneModeRadio,
                     _msg += str(char)
             val = RadioSettingValueString(0, 6, _msg)
             val.set_mutable(True)
-            rs = RadioSetting("call_names.call_name"+callnum,
-                              "Call Name "+callnum, val)
+            rs = RadioSetting("call_names.call_name%i" % i,
+                              "Call Name %i" % i, val)
             call_grp.append(rs)
 
             x = i - 1
@@ -1564,7 +1558,7 @@ class KG935GRadio(chirp_common.CloneModeRadio,
                                            self.callid2str(callid.cid),
                                            False)
             rs = RadioSetting("call_ids[%i].cid" % x,
-                              "Call Code %s" % str(i), c_id)
+                              "Call Code %i" % i, c_id)
             rs.set_apply_callback(apply_callid, callid)
             call_grp.append(rs)
 
@@ -1819,24 +1813,16 @@ class KG935GRadio(chirp_common.CloneModeRadio,
         scan_grp.append(rs)
 
         for i in range(1, 11):
-            scgroup = str(i)
-
-            rs = RadioSetting("scan_groups.Group_lower"+scgroup,
-                              "Scan Group "+scgroup+" Lower",
-                              RadioSettingValueInteger(1, 999,
-                                                       eval("self._memobj. \
-                                                            scan_groups. \
-                                                            Group_lower" +
-                                                            scgroup)))
+            val = getattr(self._memobj.scan_groups, 'Group_lower%i' % i)
+            rs = RadioSetting("scan_groups.Group_lower%i" % i,
+                              "Scan Group %i Lower" % i,
+                              RadioSettingValueInteger(1, 999, val))
             scan_grp.append(rs)
 
-            rs = RadioSetting("scan_groups.Group_upper"+scgroup,
-                              "Scan Group "+scgroup+" Upper",
-                              RadioSettingValueInteger(1, 999,
-                                                       eval("self._memobj. \
-                                                            scan_groups. \
-                                                            Group_upper" +
-                                                            scgroup)))
+            val = getattr(self._memobj.scan_groups, 'Group_upper%i' % i)
+            rs = RadioSetting("scan_groups.Group_upper%i" % i,
+                              "Scan Group %i Upper" % i,
+                              RadioSettingValueInteger(1, 999, val))
             scan_grp.append(rs)
 
         # VFO A Settings
@@ -2006,14 +1992,11 @@ class KG935GRadio(chirp_common.CloneModeRadio,
         # FM RADIO PRESETS
 
         # memory stores raw integer value like 760
-        # radio will divide 760 by 10 and interpret correctly at 76.0MHz
+        # radio will divide 760 by 10 and interpret correctly at 76.0 MHz
         for i in range(1, 21):
-            chan = str(i)
-            rs = RadioSetting("FM_radio" + chan, "FM Preset" + chan,
-                              RadioSettingValueFloat(76.0, 108.0,
-                                                     eval("_settings. \
-                                                          FM_radio" +
-                                                          chan)/10.0,
+            val = getattr(_settings, 'FM_radio%i' % i)
+            rs = RadioSetting("FM_radio%i" % i, "FM Preset %i" % i,
+                              RadioSettingValueFloat(76.0, 108.0, val / 10,
                                                      0.1, 1))
             fmradio_grp.append(rs)
 
@@ -2209,7 +2192,6 @@ class KG935GPlusRadio(KG935GRadio):
     """Wouxun KG-935G Plus"""
     VENDOR = "Wouxun"
     MODEL = "KG-935G Plus"
-    NEEDS_COMPAT_SERIAL = False
 
     def process_mmap(self):
         self._memobj = bitwise.parse(_MEM_FORMAT_935GPLUS, self._mmap)
@@ -2221,7 +2203,6 @@ class KGUV8HRadio(KG935GRadio):
     """Wouxun KG-UV8H"""
     VENDOR = "Wouxun"
     MODEL = "KG-UV8H"
-    NEEDS_COMPAT_SERIAL = False
 
     def process_mmap(self):
         self._memobj = bitwise.parse(_MEM_FORMAT_UV8H, self._mmap)

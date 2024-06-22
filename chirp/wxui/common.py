@@ -13,10 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import atexit
+import contextlib
 import functools
+import itertools
 import logging
 import os
 import platform
+import shutil
+import tempfile
+import textwrap
 import threading
 
 import wx
@@ -24,6 +30,8 @@ import wx
 from chirp import chirp_common
 from chirp.drivers import generic_csv
 from chirp import errors
+from chirp import logger
+from chirp import platform as chirp_platform
 from chirp import settings
 from chirp.wxui import config
 from chirp.wxui import radiothread
@@ -43,6 +51,10 @@ INDEX_CHAR = settings.BANNED_NAME_CHARACTERS[0]
 # global is technically too broad, but in reality, it's equivalent for
 # us at the moment, and this is easier.
 EDIT_LOCK = threading.Lock()
+
+
+class ExportFailed(Exception):
+    pass
 
 
 def closes_clipboard(fn):
@@ -349,6 +361,7 @@ class ChirpSettingGrid(wx.Panel):
     def __init__(self, settinggroup, *a, **k):
         super(ChirpSettingGrid, self).__init__(*a, **k)
         self._group = settinggroup
+        self._settings = {}
         self._needs_reload = False
 
         self.pg = wx.propgrid.PropertyGrid(
@@ -357,6 +370,7 @@ class ChirpSettingGrid(wx.Panel):
             wx.propgrid.PG_BOLD_MODIFIED)
 
         self.pg.Bind(wx.propgrid.EVT_PG_CHANGED, self._pg_changed)
+        self.pg.Bind(wx.EVT_MOTION, self._mouseover)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         self.SetSizer(sizer)
@@ -364,12 +378,42 @@ class ChirpSettingGrid(wx.Panel):
 
         self._choices = {}
 
-        for name, element in self._group.items():
-            if not isinstance(element, settings.RadioSetting):
+        self._add_items(self._group)
+        self.pg.Bind(wx.propgrid.EVT_PG_CHANGING, self._check_change)
+
+    def _mouseover(self, event):
+        prop = self.pg.HitTest(event.GetPosition()).GetProperty()
+        tip = None
+        if prop:
+            setting = self.get_setting_by_name(prop.GetName())
+            tip = setting.__doc__ or None
+            if tip and tip == setting.get_name():
+                # This is the default, which makes no sense, but it's been
+                # that way for ages, so just avoid exposing it here if it's
+                # set to the default.
+                tip = None
+
+        event.GetEventObject().SetToolTip(tip)
+
+    def _add_items(self, group, parent=None):
+        def append(item):
+            if parent:
+                self.pg.AppendIn(parent, item)
+            else:
+                self.pg.Append(item)
+
+        for name, element in group.items():
+            if isinstance(element, settings.RadioSettingSubGroup):
+                category = wx.propgrid.PropertyCategory(
+                               element.get_shortname(), element.get_name())
+                append(category)
+                self._add_items(element, parent=category)
+                continue
+            elif not isinstance(element, settings.RadioSetting):
                 LOG.debug('Skipping nested group %s' % element)
                 continue
             if len(element.keys()) > 1:
-                self.pg.Append(wx.propgrid.PropertyCategory(
+                append(wx.propgrid.PropertyCategory(
                     element.get_shortname()))
 
             for i in element.keys():
@@ -394,16 +438,29 @@ class ChirpSettingGrid(wx.Panel):
                 if len(element.keys()) > 1:
                     editor.SetLabel('')
                 editor.Enable(value.get_mutable())
-                self.pg.Append(editor)
+                append(editor)
+                self._settings[element.get_name()] = element
+                if editor.IsValueUnspecified():
+                    # Mark invalid/unspecified values so the user can fix them
+                    self.pg.SetPropertyBackgroundColour(editor.GetName(),
+                                                        wx.YELLOW)
 
-                # Use object() as a sentinel that will never match the safe
-                # value to determine if we need to catch changes for this to
-                # check for a warning.
-                if element.get_warning(object()) or element.volatile:
-                    self.pg.Bind(wx.propgrid.EVT_PG_CHANGING,
-                                 lambda evt: self._check_change(evt, element))
+        self.pg.Bind(wx.propgrid.EVT_PG_CHANGING, self._check_change)
 
-    def _check_change(self, event, setting):
+    def get_setting_by_name(self, name, index=0):
+        if INDEX_CHAR in name:
+            # FIXME: This will only work for single-index settings of course
+            name, _ = name.split(INDEX_CHAR, 1)
+        for setting_name, setting in self._settings.items():
+            if name == setting_name:
+                return setting
+
+    def _check_change(self, event):
+        setting = self.get_setting_by_name(event.GetPropertyName())
+        if not setting:
+            LOG.error('Got change event for unknown setting %s' % (
+                event.GetPropertyName()))
+            return
         warning = setting.get_warning(event.GetValue())
         if warning:
             r = wx.MessageBox(warning, _('WARNING!'),
@@ -424,6 +481,9 @@ class ChirpSettingGrid(wx.Panel):
                 'the image, which will happen now.'),
                           _('Refresh required'), wx.OK)
 
+        # If we were unspecified or otherwise marked, clear those markings
+        self.pg.SetPropertyColoursToDefault(event.GetProperty().GetName())
+
     @property
     def name(self):
         return self._group.get_name()
@@ -441,8 +501,11 @@ class ChirpSettingGrid(wx.Panel):
 
     def _get_editor_int(self, setting, value):
         e = wx.propgrid.IntProperty(setting.get_shortname(),
-                                    setting.get_name(),
-                                    value=int(value))
+                                    setting.get_name())
+        if value.initialized:
+            e.SetValue(int(value))
+        else:
+            e.SetValueToUnspecified()
         e.SetEditor('SpinCtrl')
         e.SetAttribute(wx.propgrid.PG_ATTR_MIN, value.get_min())
         e.SetAttribute(wx.propgrid.PG_ATTR_MAX, value.get_max())
@@ -465,18 +528,25 @@ class ChirpSettingGrid(wx.Panel):
             def ValueToString(self, _value, flags=0):
                 return value.format(_value)
 
-        return ChirpFloatProperty(setting.get_shortname(),
-                                  setting.get_name(),
-                                  value=float(value))
+        e = ChirpFloatProperty(setting.get_shortname(),
+                               setting.get_name())
+        if value.initialized:
+            e.SetValue(float(value))
+        else:
+            e.SetValueToUnspecified()
+        return e
 
     def _get_editor_choice(self, setting, value):
         choices = value.get_options()
         self._choices[setting.get_name()] = choices
-        current = choices.index(str(value))
-        return wx.propgrid.EnumProperty(setting.get_shortname(),
-                                        setting.get_name(),
-                                        choices, range(len(choices)),
-                                        current)
+        e = wx.propgrid.EnumProperty(setting.get_shortname(),
+                                     setting.get_name(),
+                                     choices, range(len(choices)))
+        if value.initialized:
+            e.SetValue(choices.index(str(value)))
+        else:
+            e.SetValueToUnspecified()
+        return e
 
     def _get_editor_bool(self, setting, value):
         prop = wx.propgrid.BoolProperty(setting.get_shortname(),
@@ -495,9 +565,13 @@ class ChirpSettingGrid(wx.Panel):
                     return False
                 return True
 
-        return ChirpStrProperty(setting.get_shortname(),
-                                setting.get_name(),
-                                value=str(value))
+        e = ChirpStrProperty(setting.get_shortname(),
+                             setting.get_name())
+        if value.initialized:
+            e.SetValue(str(value))
+        else:
+            e.SetValueToUnspecified()
+        return e
 
     def get_setting_values(self):
         """Return a dict of {name: (RadioSetting, newvalue)}"""
@@ -505,12 +579,14 @@ class ChirpSettingGrid(wx.Panel):
         for prop in self.pg._Items():
             if prop.IsCategory():
                 continue
+            if prop.IsValueUnspecified():
+                continue
             basename = prop.GetName().split(INDEX_CHAR)[0]
             if isinstance(prop, wx.propgrid.EnumProperty):
                 value = self._choices[basename][prop.GetValue()]
             else:
                 value = prop.GetValue()
-            setting = self._group[basename]
+            setting = self._settings[basename]
             values[prop.GetName()] = setting, value
         return values
 
@@ -554,6 +630,7 @@ def _error_proof(*expected_errors):
 class error_proof(object):
     def __init__(self, *expected_exceptions):
         self._expected = expected_exceptions
+        self.fn = None
 
     @staticmethod
     def show_error(msg):
@@ -585,7 +662,8 @@ class error_proof(object):
     def __exit__(self, exc_type, exc_val, traceback):
         if exc_type:
             if exc_type in self._expected:
-                LOG.error('%s: %s: %s' % (self.fn, exc_type, exc_val))
+                LOG.error('%s: %s: %s',
+                          self.fn or 'context', exc_type, exc_val)
                 self.show_error(exc_val)
                 return True
             else:
@@ -595,12 +673,61 @@ class error_proof(object):
 
 
 def reveal_location(path):
-    if not os.path.isdir(path):
-        raise FileNotFoundError(_('Path %s does not exist') % path)
+    LOG.debug('Revealing path %s', path)
     system = platform.system()
     if system == 'Windows':
-        wx.Execute('explorer /select, %s' % path)
+        if not os.path.isdir(path):
+            # Windows can only reveal the containing directory of a file
+            path = os.path.dirname(path)
+        wx.Execute('explorer %s' % path)
     elif system == 'Darwin':
         wx.Execute('open -R %s' % path)
+    elif system == 'Linux':
+        wx.Execute('open %s' % path)
     else:
         raise Exception(_('Unable to reveal %s on this system') % path)
+
+
+def delete_atexit(path_):
+    def do(path):
+        try:
+            os.remove(path)
+            LOG.debug('Removed temporary file %s', path)
+        except Exception as e:
+            LOG.warning('Failed to remove %s: %s', path, e)
+
+    atexit.register(do, path_)
+
+
+def temporary_debug_log():
+    """Return a temporary copy of our debug log"""
+    pf = chirp_platform.get_platform()
+    src = pf.config_file('debug.log')
+    fd, dst = tempfile.mkstemp(
+        prefix='chirp_debug-',
+        suffix='.txt')
+    delete_atexit(dst)
+    shutil.copy(src, dst)
+    return dst
+
+
+@contextlib.contextmanager
+def expose_logs(level, root, label, maxlen=128):
+    if not isinstance(root, tuple):
+        root = (root,)
+
+    mgrs = (logger.log_history(level, x) for x in root)
+    with contextlib.ExitStack() as stack:
+        histories = [stack.enter_context(m) for m in mgrs]
+        try:
+            yield
+        finally:
+            lines = list(itertools.chain.from_iterable(x.get_history()
+                                                       for x in histories))
+            if lines:
+                msg = os.linesep.join(textwrap.shorten(x.getMessage(), maxlen)
+                                      for x in lines)
+                d = wx.MessageDialog(
+                    None, str(msg), label,
+                    style=wx.OK | wx.ICON_INFORMATION)
+                d.ShowModal()

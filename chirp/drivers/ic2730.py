@@ -18,6 +18,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
+import typing
+
 from chirp.drivers import icf
 from chirp import chirp_common, directory, bitwise
 from chirp.settings import RadioSettingGroup, RadioSetting, \
@@ -27,17 +29,9 @@ from chirp.settings import RadioSettingGroup, RadioSetting, \
 
 LOG = logging.getLogger(__name__)
 
-HAS_FUTURE = True
-try:                         # PY3 compliance
-    from builtins import bytes
-except ImportError:
-    HAS_FUTURE = False
-    LOG.debug('python-future package is not '
-              'available; %s requires it' % __name__)
-
 MEM_FORMAT = """
 struct {
-  u24  freq_flags:6
+  u24  freq_flags:6,
        freq:18;
   u16  offset;
   u8   tune_step:4,
@@ -90,11 +84,11 @@ char nam[6];
 
 #seekto 0x4e80;
 struct {
-u24  loflags:6
+u24  loflags:6,
      lofreq:18;
-u24  hiflags:6
+u24  hiflags:6,
      hifreq:18;
-u8  flag:4
+u8  flag:4,
     mode:4;
 u8  tstp;
 char name[6];
@@ -122,7 +116,7 @@ u8  civbaud;
 u8  civtcvr;
 u8  sqlatt;
 u8  sqldly;
-u8  unk5014a:4
+u8  unk5014a:4,
     fanspeed:4;
 u8  unk5015;
 u8  bthvox;
@@ -193,8 +187,8 @@ u8  unk505a;
 u8  unk505b;
 u8  unk505c;
 u8  unk505d;
-u8  unk505e:6
-    rpthangup:1
+u8  unk505e:6,
+    rpthangup:1,
     unk505e2:1;
 u8  unk505f;
 } settings;
@@ -293,7 +287,7 @@ class IC2730Radio(icf.IcomCloneModeRadio):
     _raw_frames = True
     _highbit_flip = True
 
-    _icf_data = {
+    _icf_data: dict[str, typing.Any] = {
         'MapRev': 1,
         'EtcData': 0,  # This might be wrong
         'Comment': '',
@@ -1324,7 +1318,6 @@ class IC2730Radio(icf.IcomCloneModeRadio):
 
     def set_settings(self, settings):
         _settings = self._memobj.settings
-        _mem = self._memobj
         for element in settings:
             if not isinstance(element, RadioSetting):
                 self.set_settings(element)

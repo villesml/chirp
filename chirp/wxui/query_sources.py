@@ -31,13 +31,14 @@ from chirp.sources import przemienniki
 from chirp.wxui import common
 from chirp.wxui import config
 
+_ = wx.GetTranslation
 CONF = config.get()
 LOG = logging.getLogger(__name__)
 QueryThreadEvent, EVT_QUERY_THREAD = wx.lib.newevent.NewCommandEvent()
 
 
 class NumberValidator(wx.Validator):
-    THING = 'Number'
+    THING = _('Number')
     MIN = 0
     MAX = 1
     OPTIONAL = True
@@ -62,7 +63,7 @@ class NumberValidator(wx.Validator):
         catalog = {'value': self.THING,
                    'min': self.MIN,
                    'max': self.MAX}
-        wx.MessageBox(msg % catalog, 'Invalid Entry')
+        wx.MessageBox(msg % catalog, _('Invalid Entry'))
         return False
 
     def Clone(self):
@@ -84,19 +85,19 @@ class NumberValidator(wx.Validator):
 
 
 class LatValidator(NumberValidator):
-    THING = 'Latitude'
+    THING = _('Latitude')
     MIN = -90
     MAX = 90
 
 
 class LonValidator(NumberValidator):
-    THING = 'Longitude'
+    THING = _('Longitude')
     MIN = -180
     MAX = 180
 
 
 class DistValidator(NumberValidator):
-    THING = 'Distance'
+    THING = _('Distance')
     MIN = 0
     MAX = 7000
 
@@ -218,6 +219,7 @@ class QuerySourceDialog(wx.Dialog):
 
     def do_query(self):
         LOG.info('Starting QueryThread for %s' % self.result_radio)
+        LOG.debug('Query Parameters: %s' % self.get_params())
         QueryThread(self, self.result_radio).start()
 
     def get_params(self):
@@ -253,7 +255,7 @@ class RepeaterBookQueryDialog(QuerySourceDialog):
     NAME = 'Repeaterbook'
 
     def get_info(self):
-        return (
+        return _(
             "RepeaterBook is Amateur Radio's most comprehensive,\n"
             "worldwide, FREE repeater directory.")
 
@@ -326,6 +328,17 @@ class RepeaterBookQueryDialog(QuerySourceDialog):
         self._modefilter = wx.CheckBox(panel, label=_('Only certain modes'))
         self.Bind(wx.EVT_CHECKBOX, self._select_modes, self._modefilter)
         self._add_grid(grid, _('Limit Modes'), self._modefilter)
+
+        self._openonly = wx.CheckBox(panel, label=_('Open repeaters only'))
+        self._openonly.SetValue(CONF.get_bool('openonly', 'repeaterbook'))
+        self._openonly.SetToolTip(_('Exclude private and closed repeaters'))
+        self._add_grid(grid, _('Limit use'), self._openonly)
+
+        self._fmconv = wx.CheckBox(panel, label=_('Convert to FM'))
+        self._fmconv.SetValue(CONF.get_bool('fmconv', 'repeaterbook'))
+        self._fmconv.SetToolTip(_('Dual-mode digital repeaters that support '
+                                  'analog will be shown as FM'))
+        self._add_grid(grid, _('Digital Modes'), self._fmconv)
 
         self._state_selected(None)
         self._service_selected(None)
@@ -411,6 +424,8 @@ class RepeaterBookQueryDialog(QuerySourceDialog):
         CONF.set('state', self._state.GetStringSelection(), 'repeaterbook')
         CONF.set('country', self._country.GetStringSelection(), 'repeaterbook')
         CONF.set('service', self._service.GetStringSelection(), 'repeaterbook')
+        CONF.set_bool('fmconv', self._fmconv.IsChecked(), 'repeaterbook')
+        CONF.set_bool('openonly', self._openonly.IsChecked(), 'repeaterbook')
         self.result_radio = repeaterbook.RepeaterBook()
         super().do_query()
 
@@ -427,6 +442,8 @@ class RepeaterBookQueryDialog(QuerySourceDialog):
             'modes': self._limit_modes,
             'service': 'gmrs' if service == _('GMRS') else '',
             'service_display': self._service.GetStringSelection(),
+            'fmconv': self._fmconv.IsChecked(),
+            'openonly': self._openonly.IsChecked(),
         }
 
 
@@ -460,7 +477,7 @@ class DMRMARCQueryDialog(QuerySourceDialog):
         return vbox
 
     def get_info(self):
-        return 'The DMR-MARC Worldwide Network'
+        return _('The DMR-MARC Worldwide Network')
 
     def get_link(self):
         return 'https://www.dmr-marc.net'
@@ -636,13 +653,15 @@ class RRQueryDialog(QuerySourceDialog):
     NAME = 'RadioReference'
 
     def get_info(self):
-        return (
+        return _(
             "RadioReference.com is the world's largest\n"
             "radio communications data provider\n"
             "<small>Premium account required</small>")
 
     def get_link(self):
-        return 'https://www.radioreference.com/apps/content/?cid=3'
+        return (
+            'https://support.radioreference.com/hc/en-us/articles/'
+            '18860633200276-Programming-Using-the-RadioReference-Web-Service')
 
     def _add_grid(self, grid, label, widget):
         grid.Add(wx.StaticText(widget.GetParent(), label=label),
@@ -683,7 +702,7 @@ class RRQueryDialog(QuerySourceDialog):
 
     def _call_validations(self, parent):
         if parent == self:
-            # If we're calling valiations at the top-level, redirect that to
+            # If we're calling validations at the top-level, redirect that to
             # the start of our country-specific widgets, based on whatever tab
             # is selected. This avoids trying to validate US things when
             # Canada is selected and so on.
@@ -802,7 +821,7 @@ class RRQueryDialog(QuerySourceDialog):
 
     def _selected_county(self, chosencounty):
         self._ca_county_id = 0
-        for _, prov, cid, county in radioreference.CA_COUNTIES:
+        for _u, _prov, cid, county in radioreference.CA_COUNTIES:
             if county == chosencounty:
                 self._ca_county_id = cid
                 break

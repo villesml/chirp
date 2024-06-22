@@ -81,7 +81,6 @@ class MURSV1(baofeng_common.BaofengCommonHT):
     """BTech MURS-V1"""
     VENDOR = "BTECH"
     MODEL = "MURS-V1"
-    NEEDS_COMPAT_SERIAL = False
 
     _fileid = [MURSV1_fp1, ]
 
@@ -369,7 +368,7 @@ class MURSV1(baofeng_common.BaofengCommonHT):
         mem = chirp_common.Memory()
         mem.number = number
 
-        if _mem.get_raw()[0] == "\xff":
+        if _mem.get_raw()[:1] == b"\xff":
             mem.empty = True
             return mem
 
